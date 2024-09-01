@@ -1,18 +1,20 @@
 
+#include <EEPROM.h>
+
 #include <Adafruit_NeoPixel.h>
 
 // Which pin on the Arduino is connected to the NeoPixels?
-#define PIN        6 // On Trinket or Gemma, suggest changing this to 1
+#define PIN 6  // On Trinket or Gemma, suggest changing this to 1
 
 // How many NeoPixels are attached to the Arduino?
-#define NUMPIXELS 16 // Popular NeoPixel ring size
+#define NUMPIXELS 16  // Popular NeoPixel ring size
 // When setting up the NeoPixel library, we tell it how many pixels,
 // and which pin to use to send signals. Note that for older NeoPixel
 // strips you might need to change the third parameter -- see the
 // strandtest example for more information on possible values.
 Adafruit_NeoPixel pixels(NUMPIXELS, PIN, NEO_GRB + NEO_KHZ800);
 
-#define DELAYVAL 500 // Time (in milliseconds) to pause between pixels
+#define DELAYVAL 500  // Time (in milliseconds) to pause between pixels
 
 
 /*********************************************************************
@@ -39,7 +41,7 @@ Adafruit_NeoPixel pixels(NUMPIXELS, PIN, NEO_GRB + NEO_KHZ800);
 #include "BluefruitConfig.h"
 
 #if SOFTWARE_SERIAL_AVAILABLE
-  #include <SoftwareSerial.h>
+#include <SoftwareSerial.h>
 #endif
 
 /*=========================================================================
@@ -73,9 +75,9 @@ Adafruit_NeoPixel pixels(NUMPIXELS, PIN, NEO_GRB + NEO_KHZ800);
                               "DISABLE" or "MODE" or "BLEUART" or
                               "HWUART"  or "SPI"  or "MANUAL"
     -----------------------------------------------------------------------*/
-    #define FACTORYRESET_ENABLE         1
-    #define MINIMUM_FIRMWARE_VERSION    "0.6.6"
-    #define MODE_LED_BEHAVIOUR          "MODE"
+#define FACTORYRESET_ENABLE 0
+#define MINIMUM_FIRMWARE_VERSION "0.6.6"
+#define MODE_LED_BEHAVIOUR "MODE"
 /*=========================================================================*/
 
 // Create the bluefruit object, either software serial...uncomment these lines
@@ -99,15 +101,16 @@ Adafruit_BluefruitLE_SPI ble(BLUEFRUIT_SPI_CS, BLUEFRUIT_SPI_IRQ, BLUEFRUIT_SPI_
 
 
 // A small helper
-void error(const __FlashStringHelper*err) {
+void error(const __FlashStringHelper *err) {
   Serial.println(err);
-  while (1);
+  while (1)
+    ;
 }
 
 // function prototypes over in packetparser.cpp
 uint8_t readPacket(Adafruit_BLE *ble, uint16_t timeout);
 float parsefloat(uint8_t *buffer);
-void printHex(const uint8_t * data, const uint32_t numBytes);
+void printHex(const uint8_t *data, const uint32_t numBytes);
 
 // the packet buffer
 extern uint8_t packetbuffer[];
@@ -128,14 +131,28 @@ bool waitingForColor = false;
 
 
 /**************************************************************************/
+//                  VARIABLES FOR APP LOGIC
+/**************************************************************************/
+
+bool clearEeprom = false;
+bool blueConnected = false;
+
+
+/**************************************************************************/
+/**************************************************************************/
+
+
+
+
+/**************************************************************************/
 /*!
     @brief  Sets up the HW an the BLE module (this function is called
             automatically on startup)
 */
 /**************************************************************************/
-void setup(void)
-{
-  while (!Serial);  // required for Flora & Micro
+void setup(void) {
+  while (!Serial)
+    ;  // required for Flora & Micro
   delay(500);
 
   Serial.begin(115200);
@@ -145,17 +162,15 @@ void setup(void)
   /* Initialise the module */
   Serial.print(F("Initialising the Bluefruit LE module: "));
 
-  if ( !ble.begin(VERBOSE_MODE) )
-  {
+  if (!ble.begin(VERBOSE_MODE)) {
     error(F("Couldn't find Bluefruit, make sure it's in CoMmanD mode & check wiring?"));
   }
-  Serial.println( F("OK!") );
+  Serial.println(F("OK!"));
 
-  if ( FACTORYRESET_ENABLE )
-  {
+  if (FACTORYRESET_ENABLE) {
     /* Perform a factory reset to make sure everything is in a known state */
     Serial.println(F("Performing a factory reset: "));
-    if ( ! ble.factoryReset() ){
+    if (!ble.factoryReset()) {
       error(F("Couldn't factory reset"));
     }
   }
@@ -174,29 +189,36 @@ void setup(void)
 
   ble.verbose(false);  // debug info is a little annoying after this point!
 
-  /* Wait for connection */
-  while (! ble.isConnected()) {
-      delay(500);
-  }
+
 
   Serial.println(F("******************************"));
 
   // LED Activity command is only supported from 0.6.6
-  if ( ble.isVersionAtLeast(MINIMUM_FIRMWARE_VERSION) )
-  {
+  if (ble.isVersionAtLeast(MINIMUM_FIRMWARE_VERSION)) {
     // Change Mode LED Activity
     Serial.println(F("Change LED activity to " MODE_LED_BEHAVIOUR));
     ble.sendCommandCheckOK("AT+HWModeLED=" MODE_LED_BEHAVIOUR);
   }
 
   // Set Bluefruit to DATA mode
-  Serial.println( F("Switching to DATA mode!") );
+  Serial.println(F("Switching to DATA mode!"));
   ble.setMode(BLUEFRUIT_MODE_DATA);
 
   Serial.println(F("******************************"));
 
-  pixels.begin(); // INITIALIZE NeoPixel strip object (REQUIRED)
 
+  Serial.print("EEPROM length: ");
+
+  Serial.println(EEPROM.length());
+
+  if (clearEeprom) {
+    clearMem();
+  }
+
+
+  setVarsFromEprom();
+
+  pixels.begin();  // INITIALIZE NeoPixel strip object (REQUIRED)
 }
 
 /**************************************************************************/
@@ -204,8 +226,33 @@ void setup(void)
     @brief  Constantly poll for new command or response data
 */
 /**************************************************************************/
-void loop(void)
-{
+void loop(void) {
+
+
+  blueConnected = ble.isConnected();
+
+  if (blueConnected) {
+    checkForBlue();
+  }
+
+  pixels.clear();  // Set all pixel colors to 'off'
+
+  // The first NeoPixel in a strand is #0, second is 1, all the way up
+  // to the count of pixels minus one.
+  for (int i = 0; i < NUMPIXELS; i++) {  // For each pixel...
+
+    // pixels.Color() takes RGB values, from 0,0,0 up to 255,255,255
+    // Here we're using a moderately bright green color:
+    pixels.setPixelColor(i, pixels.Color(basicSceneMainColorRed, basicSceneMainColorGreen, basicSceneMainColorBlue));
+
+    pixels.show();  // Send the updated pixel colors to the hardware.
+
+    delay(DELAYVAL);  // Pause before next pass through loop
+  }
+}
+
+void checkForBlue() {
+
   /* Wait for new data to arrive */
   uint8_t len = readPacket(&ble, BLE_READPACKET_TIMEOUT);
   //if (len == 0) return;
@@ -213,7 +260,7 @@ void loop(void)
   /* Got a packet! */
   // printHex(packetbuffer, len);
 
-  
+
   // program mode command
   if (packetbuffer[1] == 'p') {
     Serial.print("Program mode command: ");
@@ -222,7 +269,6 @@ void loop(void)
     if (packetbuffer[2] == 'c') {
       waitingForColor = true;
     }
-
   }
 
 
@@ -231,7 +277,7 @@ void loop(void)
     uint8_t red = packetbuffer[2];
     uint8_t green = packetbuffer[3];
     uint8_t blue = packetbuffer[4];
-    Serial.print ("RGB #");
+    Serial.print("RGB #");
     if (red < 0x10) Serial.print("0");
     Serial.print(red, HEX);
     if (green < 0x10) Serial.print("0");
@@ -243,6 +289,7 @@ void loop(void)
       basicSceneMainColorGreen = green;
       basicSceneMainColorBlue = blue;
       waitingForColor = false;
+      setEpromFromVars();
     }
   }
 
@@ -250,25 +297,39 @@ void loop(void)
   if (packetbuffer[1] == 'B') {
     uint8_t buttnum = packetbuffer[2] - '0';
     boolean pressed = packetbuffer[3] - '0';
-    Serial.print ("Button "); Serial.print(buttnum);
+    Serial.print("Button ");
+    Serial.print(buttnum);
     if (pressed) {
       Serial.println(" pressed");
     } else {
       Serial.println(" released");
     }
   }
-  pixels.clear(); // Set all pixel colors to 'off'
+}
 
-  // The first NeoPixel in a strand is #0, second is 1, all the way up
-  // to the count of pixels minus one.
-  for(int i=0; i<NUMPIXELS; i++) { // For each pixel...
-
-    // pixels.Color() takes RGB values, from 0,0,0 up to 255,255,255
-    // Here we're using a moderately bright green color:
-    pixels.setPixelColor(i, pixels.Color(basicSceneMainColorRed, basicSceneMainColorGreen, basicSceneMainColorBlue));
-
-    pixels.show();   // Send the updated pixel colors to the hardware.
-
-    delay(DELAYVAL); // Pause before next pass through loop
+void clearMem() {
+  for (int i = 0; i < EEPROM.length(); i++) {
+    EEPROM.write(i, 0);
   }
+}
+
+void setVarsFromEprom() {
+  uint8_t red = EEPROM.read(0);
+  uint8_t green = EEPROM.read(1);
+  uint8_t blue = EEPROM.read(2);
+  if (red > 0) {
+    basicSceneMainColorRed = red;
+  }
+  if (green > 0) {
+    basicSceneMainColorGreen = green;
+  }
+  if (blue > 0) {
+    basicSceneMainColorBlue = blue;
+  }
+}
+
+void setEpromFromVars() {
+  EEPROM.update(0, basicSceneMainColorRed);
+  EEPROM.update(1, basicSceneMainColorGreen);
+  EEPROM.update(2, basicSceneMainColorBlue);
 }
