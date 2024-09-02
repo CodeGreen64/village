@@ -3,16 +3,6 @@
 
 #include <Adafruit_NeoPixel.h>
 
-// Which pin on the Arduino is connected to the NeoPixels?
-#define PIN 6  // On Trinket or Gemma, suggest changing this to 1
-
-// How many NeoPixels are attached to the Arduino?
-#define NUMPIXELS 16  // Popular NeoPixel ring size
-// When setting up the NeoPixel library, we tell it how many pixels,
-// and which pin to use to send signals. Note that for older NeoPixel
-// strips you might need to change the third parameter -- see the
-// strandtest example for more information on possible values.
-Adafruit_NeoPixel pixels(NUMPIXELS, PIN, NEO_GRB + NEO_KHZ800);
 
 #define DELAYVAL 500  // Time (in milliseconds) to pause between pixels
 
@@ -119,6 +109,14 @@ extern uint8_t packetbuffer[];
 //                  VARIABLES FOR NEO-PIXEL
 /**************************************************************************/
 
+int pixelFormat = NEO_GRB + NEO_KHZ800;
+uint8_t numPixels_a = 16;  // Popular NeoPixel ring size
+int pin_a = 6;       // On Trinket or Gemma, suggest changing this to 1
+
+// Rather than declaring the whole NeoPixel object here, we just create
+// a pointer for one, which we'll then allocate later...
+Adafruit_NeoPixel *pixels_a;
+
 uint8_t basicSceneMainColorGreen = 0;
 uint8_t basicSceneMainColorRed = 0;
 uint8_t basicSceneMainColorBlue = 150;
@@ -151,9 +149,9 @@ bool blueConnected = false;
 */
 /**************************************************************************/
 void setup(void) {
-  while (!Serial)
-    ;  // required for Flora & Micro
-  delay(500);
+  //while (!Serial)
+    //;  // required for Flora & Micro
+  //delay(500);
 
   Serial.begin(115200);
   Serial.println(F("Adafruit Bluefruit App Controller Example"));
@@ -207,18 +205,28 @@ void setup(void) {
   Serial.println(F("******************************"));
 
 
+  /**************************************************************************/
+  //              EEPROM
+
   Serial.print("EEPROM length: ");
-
   Serial.println(EEPROM.length());
-
   if (clearEeprom) {
     clearMem();
   }
-
-
   setVarsFromEprom();
 
-  pixels.begin();  // INITIALIZE NeoPixel strip object (REQUIRED)
+  /**************************************************************************/
+  /**************************************************************************/
+  //              NEOPIXEL SETUP
+
+  // Then create a new NeoPixel object dynamically with these values:
+  pixels_a = new Adafruit_NeoPixel(numPixels_a, pin_a, pixelFormat);
+
+  // Going forward from here, code works almost identically to any other
+  // NeoPixel example, but instead of the dot operator on function calls
+  // (e.g. pixels.begin()), we instead use pointer indirection (->) like so:
+  pixels_a->begin();  // INITIALIZE NeoPixel strip object (REQUIRED)
+  // You'll see more of this in the loop() function below.
 }
 
 /**************************************************************************/
@@ -235,17 +243,17 @@ void loop(void) {
     checkForBlue();
   }
 
-  pixels.clear();  // Set all pixel colors to 'off'
+  pixels_a->clear();  // Set all pixel colors to 'off'
 
   // The first NeoPixel in a strand is #0, second is 1, all the way up
   // to the count of pixels minus one.
-  for (int i = 0; i < NUMPIXELS; i++) {  // For each pixel...
+  for (int i = 0; i < numPixels_a; i++) {  // For each pixel...
 
     // pixels.Color() takes RGB values, from 0,0,0 up to 255,255,255
     // Here we're using a moderately bright green color:
-    pixels.setPixelColor(i, pixels.Color(basicSceneMainColorRed, basicSceneMainColorGreen, basicSceneMainColorBlue));
+    pixels_a->setPixelColor(i, pixels_a->Color(basicSceneMainColorRed, basicSceneMainColorGreen, basicSceneMainColorBlue));
 
-    pixels.show();  // Send the updated pixel colors to the hardware.
+    pixels_a->show();  // Send the updated pixel colors to the hardware.
 
     delay(DELAYVAL);  // Pause before next pass through loop
   }
@@ -268,6 +276,10 @@ void checkForBlue() {
     Serial.print((char)progcmd);
     if (packetbuffer[2] == 'c') {
       waitingForColor = true;
+    }
+    if (packetbuffer[2] == 'a') {
+      numPixels_a = getNumberFromInput(3, 2);
+      setEpromFromVars();
     }
   }
 
@@ -317,6 +329,7 @@ void setVarsFromEprom() {
   uint8_t red = EEPROM.read(0);
   uint8_t green = EEPROM.read(1);
   uint8_t blue = EEPROM.read(2);
+  uint8_t pixa = EEPROM.read(3);
   if (red > 0) {
     basicSceneMainColorRed = red;
   }
@@ -326,10 +339,22 @@ void setVarsFromEprom() {
   if (blue > 0) {
     basicSceneMainColorBlue = blue;
   }
+  if (pixa > 0) {
+    numPixels_a = pixa;
+  }
 }
 
 void setEpromFromVars() {
   EEPROM.update(0, basicSceneMainColorRed);
   EEPROM.update(1, basicSceneMainColorGreen);
   EEPROM.update(2, basicSceneMainColorBlue);
+  EEPROM.update(3, numPixels_a);
+}
+
+uint8_t getNumberFromInput(uint8_t addr, uint8_t len){
+  String numStr = ""; 
+  for (int i = addr; i < len + addr; i++){
+    numStr += (char)packetbuffer[i];
+  }
+  return numStr.toInt();
 }
