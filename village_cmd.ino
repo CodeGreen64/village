@@ -110,34 +110,52 @@ extern uint8_t packetbuffer[];
 /**************************************************************************/
 
 int pixelFormat = NEO_GRB + NEO_KHZ800;
-uint8_t numPixels_a = 16;  // Popular NeoPixel ring size
-int pin_a = 6;       // On Trinket or Gemma, suggest changing this to 1
+uint8_t numPixels_a = 16;
+uint8_t numPixels_b = 8;
+int pin_a = 6;
+int pin_b = 5;
+
+const uint8_t SCENES = 3;
+const uint8_t CHANNELS = 1;
+const uint8_t COLOR_SETUPS = 3;
+const uint8_t PIXEL_COUNT_MAX = 10;
+const uint8_t CHANNEL_A = 0;
+const uint8_t CHANNEL_B = 1;
+
+uint32_t allPixelColors[SCENES][CHANNELS][COLOR_SETUPS][PIXEL_COUNT_MAX];
 
 // Rather than declaring the whole NeoPixel object here, we just create
 // a pointer for one, which we'll then allocate later...
 Adafruit_NeoPixel *pixels_a;
+Adafruit_NeoPixel *pixels_b;
 
 uint8_t basicSceneMainColorGreen = 0;
 uint8_t basicSceneMainColorRed = 0;
 uint8_t basicSceneMainColorBlue = 150;
-
-bool waitingForColor = false;
+uint32_t basicSceneMainColor = 0;
 
 /**************************************************************************/
+//       SCENES
 /**************************************************************************/
 
-
+const uint8_t SCENE_NOT_SET = 255;
+const uint8_t SCENE_ROLLING_FADE = 0;
+const uint8_t SCENE_TEST = 1;
 
 /**************************************************************************/
 //                  VARIABLES FOR APP LOGIC
 /**************************************************************************/
 
+
 bool clearEeprom = false;
 bool blueConnected = false;
+bool waitingForColor = false;
 
+uint8_t currentScene = SCENE_NOT_SET;
 
 /**************************************************************************/
 /**************************************************************************/
+
 
 
 
@@ -149,9 +167,8 @@ bool blueConnected = false;
 */
 /**************************************************************************/
 void setup(void) {
-  //while (!Serial)
-    //;  // required for Flora & Micro
-  //delay(500);
+  //while (!Serial);  // required for Flora & Micro
+  delay(500);
 
   Serial.begin(115200);
   Serial.println(F("Adafruit Bluefruit App Controller Example"));
@@ -205,28 +222,29 @@ void setup(void) {
   Serial.println(F("******************************"));
 
 
-  /**************************************************************************/
-  //              EEPROM
-
   Serial.print("EEPROM length: ");
+
   Serial.println(EEPROM.length());
+
   if (clearEeprom) {
     clearMem();
   }
-  setVarsFromEprom();
 
-  /**************************************************************************/
-  /**************************************************************************/
-  //              NEOPIXEL SETUP
+  
+
+  setVarsFromEprom();
 
   // Then create a new NeoPixel object dynamically with these values:
   pixels_a = new Adafruit_NeoPixel(numPixels_a, pin_a, pixelFormat);
+  pixels_b = new Adafruit_NeoPixel(numPixels_b, pin_b, pixelFormat);
 
   // Going forward from here, code works almost identically to any other
   // NeoPixel example, but instead of the dot operator on function calls
   // (e.g. pixels.begin()), we instead use pointer indirection (->) like so:
   pixels_a->begin();  // INITIALIZE NeoPixel strip object (REQUIRED)
+  pixels_b->begin();
   // You'll see more of this in the loop() function below.
+  pixels_a->setBrightness(50);
 }
 
 /**************************************************************************/
@@ -236,6 +254,7 @@ void setup(void) {
 /**************************************************************************/
 void loop(void) {
 
+  unsigned long timeNowInLoop = millis();
 
   blueConnected = ble.isConnected();
 
@@ -243,15 +262,71 @@ void loop(void) {
     checkForBlue();
   }
 
-  pixels_a->clear();  // Set all pixel colors to 'off'
 
-  // The first NeoPixel in a strand is #0, second is 1, all the way up
-  // to the count of pixels minus one.
+  bool doReset = false;
+  if (currentScene == SCENE_NOT_SET) {
+    Serial.println("Scene not set");
+    doReset = true;
+    pixels_a->clear();  // Set all pixel colors to 'off'
+    currentScene = SCENE_TEST;
+  }
+  if (currentScene == SCENE_TEST) {
+    //Serial.println("Scene test");
+  }
+  processScene(timeNowInLoop, currentScene, doReset);
+  doReset = false;
+
+  delay(10);
+}
+
+void processScene(unsigned long timeNow, uint8_t scene, bool doReset) {
+  //Serial.println("Process scene");
+  if (scene == SCENE_TEST) {
+    uint32_t testC = Adafruit_NeoPixel::Color(255, 0, 0);
+    testScene(basicSceneMainColor, 500, timeNow, doReset);
+  }
+  if (scene == SCENE_ROLLING_FADE) {
+    uint32_t startC = Adafruit_NeoPixel::Color(255, 0, 0);
+    uint32_t endC = Adafruit_NeoPixel::Color(0, 255, 0);
+    rollingCrossfade(startC, endC, 50, timeNow, doReset);
+  }
+}
+
+void testScene(const uint32_t testColor, unsigned long speed, unsigned long timeNow, bool reset) {
+
+  static unsigned long localTime;
+  static uint8_t currentCounter;
+  static uint8_t currentPixel;
+  bool advancePixel;
+  if (reset){
+    Serial.println("StartingTestScene");
+    pixels_a->clear();  // Set all pixel colors to 'off'
+    currentCounter = 0;
+    currentPixel = 0;
+  }
+  if (timeNow - localTime > speed) {
+    localTime = timeNow;
+    if (currentPixel == numPixels_a){
+      currentPixel = 0;
+      pixels_a->clear();
+      Serial.println("Back to start");
+    }
+    pixels_a->setPixelColor(currentPixel, testColor);
+    pixels_a->show();  // Send the updated pixel colors to the hardware.
+    currentPixel++;
+  }
+  
+}
+
+void testSceneOld() {
+  
+  Serial.println("StartingTestScene");
+  pixels_a->clear();                       // Set all pixel colors to 'off'
   for (int i = 0; i < numPixels_a; i++) {  // For each pixel...
 
     // pixels.Color() takes RGB values, from 0,0,0 up to 255,255,255
     // Here we're using a moderately bright green color:
-    pixels_a->setPixelColor(i, pixels_a->Color(basicSceneMainColorRed, basicSceneMainColorGreen, basicSceneMainColorBlue));
+    pixels_a->setPixelColor(i, Adafruit_NeoPixel::Color(basicSceneMainColorRed, basicSceneMainColorGreen, basicSceneMainColorBlue));
 
     pixels_a->show();  // Send the updated pixel colors to the hardware.
 
@@ -277,10 +352,6 @@ void checkForBlue() {
     if (packetbuffer[2] == 'c') {
       waitingForColor = true;
     }
-    if (packetbuffer[2] == 'a') {
-      numPixels_a = getNumberFromInput(3, 2);
-      setEpromFromVars();
-    }
   }
 
 
@@ -300,6 +371,7 @@ void checkForBlue() {
       basicSceneMainColorRed = red;
       basicSceneMainColorGreen = green;
       basicSceneMainColorBlue = blue;
+      basicSceneMainColor = Adafruit_NeoPixel::Color(basicSceneMainColorRed, basicSceneMainColorGreen, basicSceneMainColorBlue);
       waitingForColor = false;
       setEpromFromVars();
     }
@@ -325,11 +397,111 @@ void clearMem() {
   }
 }
 
+
+void setColorDefaults() {
+  for (uint8_t scn = 0; scn < SCENES; scn++) {
+    for (uint8_t ch = 0; ch < CHANNELS; ch++) {
+      uint8_t pxCt = numPixels_a;
+      if (ch == CHANNEL_B) {
+        pxCt = numPixels_b;
+      }
+      for (uint8_t cs = 0; cs < COLOR_SETUPS; cs++) {
+        uint32_t col = Adafruit_NeoPixel::Color(255, 0, 0);
+        if (cs == 1) {
+          col = Adafruit_NeoPixel::Color(0, 255, 0);
+        }
+        for (uint8_t px = 0; px < pxCt; px++) {
+          allPixelColors[scn][ch][cs][px] = col;
+        }
+      }
+    }
+  }
+}
+
+
+uint32_t crossFadeValue(const uint32_t startColor, const uint32_t endColor, int step) {
+  uint32_t sc = startColor;
+  uint32_t ec = endColor;
+  int s = step;
+  if (step > 127) {
+    sc = endColor;
+    ec = startColor;
+    s = step - 128;
+  }
+
+  byte startRed = (sc >> 16) & 0xff;
+  byte startGreen = (sc >> 8) & 0xff;
+  byte startBlue = sc & 0xff;
+
+  byte endRed = (ec >> 16) & 0xff;
+  byte endGreen = (ec >> 8) & 0xff;
+  byte endBlue = ec & 0xff;
+
+  byte red = map(s, 0, 127, startRed, endRed);
+  byte green = map(s, 0, 127, startGreen, endGreen);
+  byte blue = map(s, 0, 127, startBlue, endBlue);
+
+  unsigned long RGB = ((unsigned long)red << 16L) | ((unsigned long)green << 8L) | (unsigned long)blue;
+  return RGB;
+}
+
+
+bool transitionSingle(Adafruit_NeoPixel &neo, uint16_t pixel, const uint32_t startColor, const uint32_t endColor, bool reset) {
+  static uint8_t step;
+  if (reset) {
+    step = 0;
+  }
+  uint32_t fadeVal = crossFadeValue(startColor, endColor, step);
+  neo.setPixelColor(pixel, fadeVal);
+  neo.show();
+  if (step = 128) {
+    step = 0;
+    return true;
+  }
+  step++;
+  return false;
+}
+
+
+void rollingCrossfade(const uint32_t startColor, const uint32_t endColor, unsigned long speed, unsigned long timeNow, bool reset) {
+
+  static unsigned long localTime;
+  static uint8_t currentCounter;
+  static uint8_t currentPixel;
+  bool advancePixel;
+
+  if (reset) {
+    currentCounter = 0;
+    currentPixel = 0;
+  }
+
+  if (timeNow - localTime > speed) {
+    localTime = timeNow;
+    if (currentCounter < numPixels_a) {
+      advancePixel = transitionSingle(pixels_a, currentPixel, startColor, endColor, reset);
+    } else {
+      advancePixel = transitionSingle(pixels_b, currentPixel, startColor, endColor, reset);
+    }
+    if (advancePixel) {
+      if (currentCounter == numPixels_b) {
+        currentPixel = 0;
+        currentCounter = 0;
+      } else if (currentCounter < numPixels_a) {
+        currentCounter++;
+        currentPixel = currentCounter;
+      } else {
+        currentPixel = currentCounter - numPixels_a;
+        currentCounter++;
+      }
+    }
+  }
+}
+
+
 void setVarsFromEprom() {
   uint8_t red = EEPROM.read(0);
   uint8_t green = EEPROM.read(1);
   uint8_t blue = EEPROM.read(2);
-  uint8_t pixa = EEPROM.read(3);
   if (red > 0) {
     basicSceneMainColorRed = red;
   }
@@ -339,22 +511,11 @@ void setVarsFromEprom() {
   if (blue > 0) {
     basicSceneMainColorBlue = blue;
   }
-  if (pixa > 0) {
-    numPixels_a = pixa;
-  }
+  basicSceneMainColor = Adafruit_NeoPixel::Color(basicSceneMainColorRed, basicSceneMainColorGreen, basicSceneMainColorBlue);
 }
 
 void setEpromFromVars() {
   EEPROM.update(0, basicSceneMainColorRed);
   EEPROM.update(1, basicSceneMainColorGreen);
   EEPROM.update(2, basicSceneMainColorBlue);
-  EEPROM.update(3, numPixels_a);
-}
-
-uint8_t getNumberFromInput(uint8_t addr, uint8_t len){
-  String numStr = ""; 
-  for (int i = addr; i < len + addr; i++){
-    numStr += (char)packetbuffer[i];
-  }
-  return numStr.toInt();
 }
