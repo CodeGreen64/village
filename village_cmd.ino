@@ -111,7 +111,7 @@ extern uint8_t packetbuffer[];
 
 int pixelFormat = NEO_GRB + NEO_KHZ800;
 uint8_t numPixels_a = 16;
-uint8_t numPixels_b = 8;
+uint8_t numPixels_b = 0;
 int pin_a = 6;
 int pin_b = 5;
 
@@ -230,7 +230,7 @@ void setup(void) {
     clearMem();
   }
 
-  
+
 
   setVarsFromEprom();
 
@@ -268,27 +268,25 @@ void loop(void) {
     Serial.println("Scene not set");
     doReset = true;
     pixels_a->clear();  // Set all pixel colors to 'off'
-    currentScene = SCENE_TEST;
+    currentScene = SCENE_ROLLING_FADE;
   }
-  if (currentScene == SCENE_TEST) {
-    //Serial.println("Scene test");
-  }
+
   processScene(timeNowInLoop, currentScene, doReset);
   doReset = false;
 
-  delay(10);
+  delay(5);
 }
 
 void processScene(unsigned long timeNow, uint8_t scene, bool doReset) {
   //Serial.println("Process scene");
   if (scene == SCENE_TEST) {
     uint32_t testC = Adafruit_NeoPixel::Color(255, 0, 0);
-    testScene(basicSceneMainColor, 500, timeNow, doReset);
+    testScene(basicSceneMainColor, 50, timeNow, doReset);
   }
   if (scene == SCENE_ROLLING_FADE) {
     uint32_t startC = Adafruit_NeoPixel::Color(255, 0, 0);
     uint32_t endC = Adafruit_NeoPixel::Color(0, 255, 0);
-    rollingCrossfade(startC, endC, 50, timeNow, doReset);
+    rollingCrossfade(startC, endC, 10, timeNow, doReset);
   }
 }
 
@@ -298,7 +296,7 @@ void testScene(const uint32_t testColor, unsigned long speed, unsigned long time
   static uint8_t currentCounter;
   static uint8_t currentPixel;
   bool advancePixel;
-  if (reset){
+  if (reset) {
     Serial.println("StartingTestScene");
     pixels_a->clear();  // Set all pixel colors to 'off'
     currentCounter = 0;
@@ -306,20 +304,25 @@ void testScene(const uint32_t testColor, unsigned long speed, unsigned long time
   }
   if (timeNow - localTime > speed) {
     localTime = timeNow;
-    if (currentPixel == numPixels_a){
+    if (currentPixel == numPixels_a) {
       currentPixel = 0;
       pixels_a->clear();
       Serial.println("Back to start");
     }
-    pixels_a->setPixelColor(currentPixel, testColor);
-    pixels_a->show();  // Send the updated pixel colors to the hardware.
+    //pixels_a->setPixelColor(currentPixel, testColor);
+    //pixels_a->show();  // Send the updated pixel colors to the hardware.
+    testSetColor(*pixels_a, currentPixel, testColor);
     currentPixel++;
   }
-  
+}
+
+void testSetColor(Adafruit_NeoPixel &neo, uint8_t pix, uint32_t col) {
+  neo.setPixelColor(pix, col);
+  neo.show();
 }
 
 void testSceneOld() {
-  
+
   Serial.println("StartingTestScene");
   pixels_a->clear();                       // Set all pixel colors to 'off'
   for (int i = 0; i < numPixels_a; i++) {  // For each pixel...
@@ -441,6 +444,22 @@ uint32_t crossFadeValue(const uint32_t startColor, const uint32_t endColor, int 
   byte green = map(s, 0, 127, startGreen, endGreen);
   byte blue = map(s, 0, 127, startBlue, endBlue);
 
+  // Serial.print("Step");
+  // Serial.print(s);
+  // Serial.print(" Red");
+  // Serial.print(red);
+  // Serial.print(" Green");
+  // Serial.print(green);
+  // Serial.print(" Blue");
+  // Serial.println(blue);
+
+  // Serial.print(" Red");
+  // Serial.print(startRed);
+  // Serial.print(" Green");
+  // Serial.print(startGreen);
+  // Serial.print(" Blue");
+  // Serial.println(startBlue);
+
   unsigned long RGB = ((unsigned long)red << 16L) | ((unsigned long)green << 8L) | (unsigned long)blue;
   return RGB;
 }
@@ -450,12 +469,14 @@ bool transitionSingle(Adafruit_NeoPixel &neo, uint16_t pixel, const uint32_t sta
   static uint8_t step;
   if (reset) {
     step = 0;
+    Serial.println("Reset Transition");
   }
   uint32_t fadeVal = crossFadeValue(startColor, endColor, step);
   neo.setPixelColor(pixel, fadeVal);
   neo.show();
-  if (step = 128) {
+  if (step == 128) {
     step = 0;
+    Serial.println("Transition return true");
     return true;
   }
   step++;
@@ -468,25 +489,41 @@ void rollingCrossfade(const uint32_t startColor, const uint32_t endColor, unsign
   static unsigned long localTime;
   static uint8_t currentCounter;
   static uint8_t currentPixel;
+  static bool doReverse;
   bool advancePixel;
+  uint32_t sc;
+  uint32_t ec;
 
   if (reset) {
+    Serial.println("rollingCrossfade");
     currentCounter = 0;
     currentPixel = 0;
+    pixels_a->clear();
+    doReverse = false;
+  }
+
+  sc = startColor;
+  ec = endColor;
+  if (doReverse) {
+    sc = endColor;
+    ec = startColor;
   }
 
   if (timeNow - localTime > speed) {
     localTime = timeNow;
+    if (currentCounter == (numPixels_b + numPixels_a)) {
+      currentPixel = 0;
+      currentCounter = 0;
+      doReverse = !doReverse;
+      Serial.println("Reversing");
+    }
     if (currentCounter < numPixels_a) {
-      advancePixel = transitionSingle(pixels_a, currentPixel, startColor, endColor, reset);
+      advancePixel = transitionSingle(*pixels_a, currentPixel, sc, ec, reset);
     } else {
-      advancePixel = transitionSingle(pixels_b, currentPixel, startColor, endColor, reset);
+      advancePixel = transitionSingle(*pixels_b, currentPixel, sc, ec, reset);
     }
     if (advancePixel) {
-      if (currentCounter == numPixels_b) {
-        currentPixel = 0;
-        currentCounter = 0;
-      } else if (currentCounter < numPixels_a) {
+      if (currentCounter < numPixels_a) {
         currentCounter++;
         currentPixel = currentCounter;
       } else {
