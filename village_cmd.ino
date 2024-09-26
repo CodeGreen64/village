@@ -115,10 +115,10 @@ uint8_t numPixels_b = 0;
 int pin_a = 6;
 int pin_b = 5;
 
-const uint8_t SCENES = 3;
+const uint8_t SCENES = 2;
 const uint8_t CHANNELS = 1;
 const uint8_t COLOR_SETUPS = 3;
-const uint8_t PIXEL_COUNT_MAX = 10;
+const uint8_t PIXEL_COUNT_MAX = 16;
 const uint8_t CHANNEL_A = 0;
 const uint8_t CHANNEL_B = 1;
 
@@ -147,15 +147,25 @@ const uint8_t SCENE_TEST = 1;
 /**************************************************************************/
 
 
-bool clearEeprom = false;
+bool clearEeprom = true;
 bool blueConnected = false;
 bool waitingForColor = false;
 
 uint8_t currentScene = SCENE_NOT_SET;
 
+const uint8_t SPEED_COUNT = 2;
+uint16_t speedValues[SCENES][SPEED_COUNT];
+
 /**************************************************************************/
 /**************************************************************************/
 
+
+/**************************************************************************/
+//                  EPROM INDEXES
+/**************************************************************************/
+
+const uint16_t PIX_A = 0;
+const uint16_t PIX_B = 1;
 
 
 
@@ -228,11 +238,14 @@ void setup(void) {
 
   if (clearEeprom) {
     clearMem();
+    setColorDefaults();
+    setSpeedDefaults();
+    setEpromFromVars();
   }
 
 
 
-  setVarsFromEprom();
+  //setVarsFromEprom();
 
   // Then create a new NeoPixel object dynamically with these values:
   pixels_a = new Adafruit_NeoPixel(numPixels_a, pin_a, pixelFormat);
@@ -245,6 +258,10 @@ void setup(void) {
   pixels_b->begin();
   // You'll see more of this in the loop() function below.
   pixels_a->setBrightness(50);
+
+  uint8_t testConvert = charToHex('F');
+  Serial.print("TestConvert: ");
+  Serial.println(testConvert);
 }
 
 /**************************************************************************/
@@ -268,7 +285,7 @@ void loop(void) {
     Serial.println("Scene not set");
     doReset = true;
     pixels_a->clear();  // Set all pixel colors to 'off'
-    currentScene = SCENE_ROLLING_FADE;
+    currentScene = SCENE_TEST;
   }
 
   processScene(timeNowInLoop, currentScene, doReset);
@@ -307,11 +324,15 @@ void testScene(const uint32_t testColor, unsigned long speed, unsigned long time
     if (currentPixel == numPixels_a) {
       currentPixel = 0;
       pixels_a->clear();
-      Serial.println("Back to start");
+      //Serial.println("Back to start");
     }
+
+    uint32_t colorToSet = allPixelColors[SCENE_TEST][CHANNEL_A][0][currentPixel];
+    //Serial.print("TestColor: ");
+    //Serial.println(colorToSet);
     //pixels_a->setPixelColor(currentPixel, testColor);
     //pixels_a->show();  // Send the updated pixel colors to the hardware.
-    testSetColor(*pixels_a, currentPixel, testColor);
+    testSetColor(*pixels_a, currentPixel, colorToSet);
     currentPixel++;
   }
 }
@@ -319,22 +340,6 @@ void testScene(const uint32_t testColor, unsigned long speed, unsigned long time
 void testSetColor(Adafruit_NeoPixel &neo, uint8_t pix, uint32_t col) {
   neo.setPixelColor(pix, col);
   neo.show();
-}
-
-void testSceneOld() {
-
-  Serial.println("StartingTestScene");
-  pixels_a->clear();                       // Set all pixel colors to 'off'
-  for (int i = 0; i < numPixels_a; i++) {  // For each pixel...
-
-    // pixels.Color() takes RGB values, from 0,0,0 up to 255,255,255
-    // Here we're using a moderately bright green color:
-    pixels_a->setPixelColor(i, Adafruit_NeoPixel::Color(basicSceneMainColorRed, basicSceneMainColorGreen, basicSceneMainColorBlue));
-
-    pixels_a->show();  // Send the updated pixel colors to the hardware.
-
-    delay(DELAYVAL);  // Pause before next pass through loop
-  }
 }
 
 void checkForBlue() {
@@ -402,6 +407,9 @@ void clearMem() {
 
 
 void setColorDefaults() {
+  Serial.println("");
+  Serial.println("SET_COLOR_DEFAULTS *******");
+
   for (uint8_t scn = 0; scn < SCENES; scn++) {
     for (uint8_t ch = 0; ch < CHANNELS; ch++) {
       uint8_t pxCt = numPixels_a;
@@ -410,15 +418,44 @@ void setColorDefaults() {
       }
       for (uint8_t cs = 0; cs < COLOR_SETUPS; cs++) {
         uint32_t col = Adafruit_NeoPixel::Color(255, 0, 0);
+        if (scn == SCENE_TEST) {
+          col = Adafruit_NeoPixel::Color(0, 0, 255);
+        }
         if (cs == 1) {
           col = Adafruit_NeoPixel::Color(0, 255, 0);
         }
+        Serial.print("SetColor: ");
+        printColor(col);
+        Serial.print(" hexCol: ");
+        Serial.println(col, HEX);
+        Serial.println("");
         for (uint8_t px = 0; px < pxCt; px++) {
+          if (scn == SCENE_TEST && px > 7) {
+            col = 0xFF0000;
+          }
           allPixelColors[scn][ch][cs][px] = col;
+          if (scn == SCENE_TEST) {  // && ch == CHANNEL_A && cs == 0) {
+            Serial.print("scene: ");
+            Serial.print(scn, DEC);
+            Serial.print("; channel: ");
+            Serial.print(ch, DEC);
+            Serial.print("; color type: ");
+            Serial.print(cs, DEC);
+            Serial.print("; pixel: ");
+            Serial.print(px, DEC);
+            Serial.print("; Color: ");
+            printColor(allPixelColors[scn][ch][cs][px]);
+            Serial.println("");
+          }
         }
       }
     }
   }
+}
+
+void setSpeedDefaults() {
+  speedValues[SCENE_TEST][0] = 50;
+  speedValues[SCENE_ROLLING_FADE][0] = 10;
 }
 
 
@@ -432,13 +469,15 @@ uint32_t crossFadeValue(const uint32_t startColor, const uint32_t endColor, int 
     s = step - 128;
   }
 
-  byte startRed = (sc >> 16) & 0xff;
-  byte startGreen = (sc >> 8) & 0xff;
-  byte startBlue = sc & 0xff;
+  byte startRed = 0;
+  byte startGreen = 0;
+  byte startBlue = 0;
+  convertHexToRgb(sc, startRed, startGreen, startBlue);
 
-  byte endRed = (ec >> 16) & 0xff;
-  byte endGreen = (ec >> 8) & 0xff;
-  byte endBlue = ec & 0xff;
+  byte endRed = 0;
+  byte endGreen = 0;
+  byte endBlue = 0;
+  convertHexToRgb(ec, endRed, endGreen, endBlue);
 
   byte red = map(s, 0, 127, startRed, endRed);
   byte green = map(s, 0, 127, startGreen, endGreen);
@@ -536,23 +575,159 @@ void rollingCrossfade(const uint32_t startColor, const uint32_t endColor, unsign
 
 
 void setVarsFromEprom() {
-  uint8_t red = EEPROM.read(0);
-  uint8_t green = EEPROM.read(1);
-  uint8_t blue = EEPROM.read(2);
-  if (red > 0) {
-    basicSceneMainColorRed = red;
+  numPixels_a = EEPROM.read(PIX_A);
+  numPixels_b = EEPROM.read(PIX_B);
+
+  uint16_t eepromIdx = 2;
+
+  for (uint8_t scn = 0; scn < SCENES; scn++) {
+    for (uint8_t spcnt = 0; spcnt < SPEED_COUNT; spcnt++) {
+      speedValues[scn][spcnt] = EEPROM.read(eepromIdx);
+      eepromIdx++;
+    }
   }
-  if (green > 0) {
-    basicSceneMainColorGreen = green;
+
+  for (uint8_t scn = 0; scn < SCENES; scn++) {
+    for (uint8_t ch = 0; ch < CHANNELS; ch++) {
+      uint8_t pxCt = numPixels_a;
+      if (ch == CHANNEL_B) {
+        pxCt = numPixels_b;
+      }
+      for (uint8_t cs = 0; cs < COLOR_SETUPS; cs++) {
+        for (uint8_t px = 0; px < pxCt; px++) {
+          allPixelColors[scn][ch][cs][px] = getEepromColor(eepromIdx);
+
+          // Serial.println("*******");
+          // Serial.print("scene: ");
+          // Serial.print(scn, DEC);
+          // Serial.print(" channel: ");
+          // Serial.print(ch, DEC);
+          // Serial.print(" color type: ");
+          // Serial.print(cs, DEC);
+          // Serial.print(" pixel: ");
+          // Serial.print(px, DEC);
+
+
+          // Serial.print(" EEidx: ");
+          // Serial.print(eepromIdx);
+          // Serial.print("Color: ");
+          // printColor(allPixelColors[scn][ch][cs][px]);
+          //eepromIdx++;
+        }
+      }
+    }
   }
-  if (blue > 0) {
-    basicSceneMainColorBlue = blue;
-  }
-  basicSceneMainColor = Adafruit_NeoPixel::Color(basicSceneMainColorRed, basicSceneMainColorGreen, basicSceneMainColorBlue);
 }
 
 void setEpromFromVars() {
-  EEPROM.update(0, basicSceneMainColorRed);
-  EEPROM.update(1, basicSceneMainColorGreen);
-  EEPROM.update(2, basicSceneMainColorBlue);
+  EEPROM.update(PIX_A, numPixels_a);
+  EEPROM.update(PIX_B, numPixels_b);
+
+  uint16_t eepromIdx = 2;
+
+  for (uint8_t scn = 0; scn < SCENES; scn++) {
+    for (uint8_t spcnt = 0; spcnt < SPEED_COUNT; spcnt++) {
+      EEPROM.update(eepromIdx, speedValues[scn][spcnt]);
+      eepromIdx++;
+    }
+  }
+
+  //Serial.println("");
+  //Serial.println("SET_EEPROM_FROM_VARS *******");
+
+  for (uint8_t scn = 0; scn < SCENES; scn++) {
+    for (uint8_t ch = 0; ch < CHANNELS; ch++) {
+      uint8_t pxCt = numPixels_a;
+      if (ch == CHANNEL_B) {
+        pxCt = numPixels_b;
+      }
+      for (uint8_t cs = 0; cs < COLOR_SETUPS; cs++) {
+        for (uint8_t px = 0; px < pxCt; px++) {
+          setEepromColor(eepromIdx, allPixelColors[scn][ch][cs][px]);
+          Serial.print("eePromIdx");
+          Serial.println(eepromIdx, DEC);
+          if (scn == SCENE_TEST && ch == CHANNEL_A && cs == 0) {
+
+            // Serial.print("scene: ");
+            // Serial.print(scn, DEC);
+            // Serial.print("; channel: ");
+            // Serial.print(ch, DEC);
+            // Serial.print("; color type: ");
+            // Serial.print(cs, DEC);
+            // Serial.print("; pixel: ");
+            // Serial.print(px, DEC);
+            // Serial.print("; Color: ");
+            // printColor(allPixelColors[scn][ch][cs][px]);
+            // Serial.println("");
+          }
+          //EEPROM.update(eepromIdx, allPixelColors[scn][ch][cs][px]);
+          //eepromIdx++;
+        }
+      }
+    }
+  }
+}
+
+void printColor(uint32_t colorVal) {
+  byte red = 0;
+  byte green = 0;
+  byte blue = 0;
+  convertHexToRgb(colorVal, red, green, blue);
+  Serial.print(" Red: ");
+  Serial.print(red, DEC);
+  Serial.print("; Green: ");
+  Serial.print(green, DEC);
+  Serial.print("; Blue: ");
+  Serial.print(blue, DEC);
+}
+
+void convertHexToRgb(uint32_t colorVal, uint8_t &r, uint8_t &g, uint8_t &b) {
+  //r = (colorVal >> 16) & 0xff;
+  //g = (colorVal >> 8) & 0xff;
+  //b = colorVal & 0xff;
+  r = colorVal >> 16;
+  g = (colorVal & 0x00ff00) >> 8;
+  b = (colorVal & 0x0000ff);
+}
+
+// int charToHex(unsigned char inputChar) {
+//   if (inputChar >= '0' && inputChar <= '9')
+//     return inputChar - '0';
+//   if (inputChar >= 'A' && inputChar <= 'F')
+//     return inputChar - 'A' + 10;
+//   if (inputChar >= 'a' && inputChar <= 'f')
+//     return inputChar - 'a' + 10;
+// }
+
+void setEepromColor(uint16_t &startingIndex, uint32_t colorToSet) {
+  byte red = 0;
+  byte green = 0;
+  byte blue = 0;
+  convertHexToRgb(colorToSet, red, green, blue);
+  EEPROM.update(startingIndex, red);
+  startingIndex++;
+  EEPROM.update(startingIndex, green);
+  startingIndex++;
+  EEPROM.update(startingIndex, blue);
+  startingIndex++;
+}
+
+uint32_t getEepromColor(uint16_t &startingIndex) {
+  byte red = EEPROM.read(startingIndex);
+  startingIndex++;
+  byte green = EEPROM.read(startingIndex);
+  startingIndex++;
+  byte blue = EEPROM.read(startingIndex);
+  startingIndex++;
+  uint32_t returnColor = Adafruit_NeoPixel::Color(red, green, blue);
+  return returnColor;
+}
+
+int charToHex(unsigned char inputChar) {
+  if (inputChar >= '0' && inputChar <= '9')
+    return inputChar - '0';
+  if (inputChar >= 'A' && inputChar <= 'F')
+    return inputChar - 'A' + 10;
+  if (inputChar >= 'a' && inputChar <= 'f')
+    return inputChar - 'a' + 10;
 }
