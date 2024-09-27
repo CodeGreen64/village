@@ -147,9 +147,17 @@ const uint8_t SCENE_TEST = 1;
 /**************************************************************************/
 
 
-bool clearEeprom = true;
+bool clearEeprom = false;
 bool blueConnected = false;
+
+//Color updating
 bool waitingForColor = false;
+uint8_t sceneToUpdate = 0;
+uint8_t channelToUpdate = 0;
+uint8_t colorTypeToUpdate = 0;
+uint8_t beginPixelToUpdate = 0;
+uint8_t endPixelToUpdate = 0;
+uint32_t colorToUpdate = 0;
 
 uint8_t currentScene = SCENE_NOT_SET;
 
@@ -245,7 +253,7 @@ void setup(void) {
 
 
 
-  //setVarsFromEprom();
+  setVarsFromEprom();
 
   // Then create a new NeoPixel object dynamically with these values:
   pixels_a = new Adafruit_NeoPixel(numPixels_a, pin_a, pixelFormat);
@@ -259,7 +267,7 @@ void setup(void) {
   // You'll see more of this in the loop() function below.
   pixels_a->setBrightness(50);
 
-  uint8_t testConvert = charToHex('F');
+  uint8_t testConvert = charToHex('9');
   Serial.print("TestConvert: ");
   Serial.println(testConvert);
 }
@@ -358,7 +366,25 @@ void checkForBlue() {
     uint8_t progcmd = packetbuffer[2];
     Serial.print((char)progcmd);
     if (packetbuffer[2] == 'c') {
+      //Update Color
+      // !pcsctbe program,  scene, channel, type, beginPixel, endPixel
+      // !pc10055
       waitingForColor = true;
+      sceneToUpdate = charToHex(packetbuffer[3]);
+      channelToUpdate = charToHex(packetbuffer[4]);
+      colorTypeToUpdate = charToHex(packetbuffer[5]);
+      beginPixelToUpdate = charToHex(packetbuffer[6]);
+      endPixelToUpdate = charToHex(packetbuffer[7]);
+      Serial.print('-');
+      Serial.print(sceneToUpdate, DEC);
+      Serial.print('-');
+      Serial.print(channelToUpdate, DEC);
+      Serial.print('-');
+      Serial.print(colorTypeToUpdate, DEC);
+      Serial.print('-');
+      Serial.print(beginPixelToUpdate, DEC);
+      Serial.print('-');
+      Serial.print(endPixelToUpdate, DEC);
     }
   }
 
@@ -376,10 +402,11 @@ void checkForBlue() {
     if (blue < 0x10) Serial.print("0");
     Serial.println(blue, HEX);
     if (waitingForColor) {
-      basicSceneMainColorRed = red;
-      basicSceneMainColorGreen = green;
-      basicSceneMainColorBlue = blue;
-      basicSceneMainColor = Adafruit_NeoPixel::Color(basicSceneMainColorRed, basicSceneMainColorGreen, basicSceneMainColorBlue);
+      for (uint8_t px = beginPixelToUpdate; px <= endPixelToUpdate; px++) {
+        uint32_t newColor = Adafruit_NeoPixel::Color(red, green, blue);
+        printColor(newColor);
+        allPixelColors[sceneToUpdate][channelToUpdate][colorTypeToUpdate][px] = newColor;
+      }
       waitingForColor = false;
       setEpromFromVars();
     }
