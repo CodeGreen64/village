@@ -277,9 +277,11 @@ void setup(void) {
     @brief  Constantly poll for new command or response data
 */
 /**************************************************************************/
+
 void loop(void) {
 
   unsigned long timeNowInLoop = millis();
+
 
   blueConnected = ble.isConnected();
 
@@ -293,13 +295,13 @@ void loop(void) {
     Serial.println("Scene not set");
     doReset = true;
     pixels_a->clear();  // Set all pixel colors to 'off'
-    currentScene = SCENE_TEST;
+    currentScene = SCENE_ROLLING_FADE;
   }
 
   processScene(timeNowInLoop, currentScene, doReset);
   doReset = false;
 
-  delay(5);
+  delay(1);
 }
 
 void processScene(unsigned long timeNow, uint8_t scene, bool doReset) {
@@ -311,7 +313,8 @@ void processScene(unsigned long timeNow, uint8_t scene, bool doReset) {
   if (scene == SCENE_ROLLING_FADE) {
     uint32_t startC = Adafruit_NeoPixel::Color(255, 0, 0);
     uint32_t endC = Adafruit_NeoPixel::Color(0, 255, 0);
-    rollingCrossfade(startC, endC, 10, timeNow, doReset);
+    //rollingCrossfade(startC, endC, 10, timeNow, doReset);
+    rollingCrossfade(timeNow, doReset);
   }
 }
 
@@ -367,7 +370,7 @@ void checkForBlue() {
     Serial.print((char)progcmd);
     if (packetbuffer[2] == 'c') {
       //Update Color
-      // !pcsctbe program,  scene, channel, type, beginPixel, endPixel
+      // !pcsctbe program, color,  scene, channel, type, beginPixel, endPixel
       // !pc10055
       waitingForColor = true;
       sceneToUpdate = charToHex(packetbuffer[3]);
@@ -385,6 +388,28 @@ void checkForBlue() {
       Serial.print(beginPixelToUpdate, DEC);
       Serial.print('-');
       Serial.print(endPixelToUpdate, DEC);
+    }
+    if (packetbuffer[2] == 's') {
+      //Update Speed
+      // !psnnnn program, speed, scene, type, speed to set up to 5 digits
+      // !ps0035
+      Serial.println("SetSpeed");
+      sceneToUpdate = charToHex(packetbuffer[3]);
+      uint8_t speedTypeToUpdate = charToHex(packetbuffer[4]);
+      char numBuf[6];
+      Serial.print("len: ");
+      Serial.println(len, DEC);
+      uint8_t numChar = len - 4;
+      memcpy(&numBuf[0], &packetbuffer[5], numChar * sizeof(char));
+      uint16_t testVal = atoi(numBuf);
+      Serial.print("inputVal: ");
+      Serial.println(testVal, DEC);
+      speedValues[sceneToUpdate][speedTypeToUpdate] = testVal;
+      setEpromFromVars();
+      //for (uint8_t i = 0; i < len; i++) {
+
+      //}
+      //speedValues[sceneToUpdate][speedTypeToUpdate]
     }
   }
 
@@ -550,7 +575,69 @@ bool transitionSingle(Adafruit_NeoPixel &neo, uint16_t pixel, const uint32_t sta
 }
 
 
-void rollingCrossfade(const uint32_t startColor, const uint32_t endColor, unsigned long speed, unsigned long timeNow, bool reset) {
+
+void rollingCrossfade(unsigned long timeNow, bool reset) {
+
+  static unsigned long localTime;
+  static uint8_t currentCounter;
+  static uint8_t currentPixel;
+  static bool doReverse;
+  bool advancePixel;
+  uint32_t sc;
+  uint32_t ec;
+  uint8_t channel;
+  unsigned long speed;
+
+  if (reset) {
+    Serial.println("rollingCrossfade");
+    currentCounter = 0;
+    currentPixel = 0;
+    pixels_a->clear();
+    pixels_b->clear();
+    doReverse = false;
+  }
+
+  speed = speedValues[SCENE_ROLLING_FADE][0];
+
+  if (timeNow - localTime > speed) {
+    localTime = timeNow;
+    if (currentCounter == (numPixels_b + numPixels_a)) {
+      currentPixel = 0;
+      currentCounter = 0;
+      doReverse = !doReverse;
+      Serial.println("Reversing");
+    }
+    if (currentCounter < numPixels_a) {
+      channel = CHANNEL_A;
+    } else {
+      channel = CHANNEL_B;
+    }
+    uint32_t startColor = allPixelColors[SCENE_ROLLING_FADE][channel][0][currentPixel];
+    uint32_t endColor = allPixelColors[SCENE_ROLLING_FADE][channel][1][currentPixel];
+    sc = startColor;
+    ec = endColor;
+    if (doReverse) {
+      sc = endColor;
+      ec = startColor;
+    }
+    if (channel == CHANNEL_A) {
+      advancePixel = transitionSingle(*pixels_a, currentPixel, sc, ec, reset);
+    } else {
+      advancePixel = transitionSingle(*pixels_b, currentPixel, sc, ec, reset);
+    }
+    if (advancePixel) {
+      if (currentCounter < numPixels_a) {
+        currentCounter++;
+        currentPixel = currentCounter;
+      } else {
+        currentPixel = currentCounter - numPixels_a;
+        currentCounter++;
+      }
+    }
+  }
+}
+
+void rollingCrossfadeOld(const uint32_t startColor, const uint32_t endColor, unsigned long speed, unsigned long timeNow, bool reset) {
 
   static unsigned long localTime;
   static uint8_t currentCounter;
