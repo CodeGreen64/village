@@ -149,6 +149,7 @@ const uint8_t SCENE_TEST = 1;
 
 bool clearEeprom = false;
 bool blueConnected = false;
+bool doReset = true;
 
 //Color updating
 bool waitingForColor = false;
@@ -159,7 +160,7 @@ uint8_t beginPixelToUpdate = 0;
 uint8_t endPixelToUpdate = 0;
 uint32_t colorToUpdate = 0;
 
-uint8_t currentScene = SCENE_NOT_SET;
+uint8_t currentScene = SCENE_TEST;
 
 const uint8_t SPEED_COUNT = 2;
 uint16_t speedValues[SCENES][SPEED_COUNT];
@@ -174,7 +175,7 @@ uint16_t speedValues[SCENES][SPEED_COUNT];
 
 const uint16_t PIX_A = 0;
 const uint16_t PIX_B = 1;
-
+const uint16_t CURRENT_SCENE_EPROM = 2;
 
 
 
@@ -267,6 +268,7 @@ void setup(void) {
   // You'll see more of this in the loop() function below.
   pixels_a->setBrightness(50);
 
+
   uint8_t testConvert = charToHex('9');
   Serial.print("TestConvert: ");
   Serial.println(testConvert);
@@ -289,13 +291,11 @@ void loop(void) {
     checkForBlue();
   }
 
-
-  bool doReset = false;
-  if (currentScene == SCENE_NOT_SET) {
-    Serial.println("Scene not set");
-    doReset = true;
+  if (doReset) {
     pixels_a->clear();  // Set all pixel colors to 'off'
-    currentScene = SCENE_ROLLING_FADE;
+    pixels_b->clear();
+    Serial.print("CurrentScene: ");
+    Serial.println(currentScene, DEC);
   }
 
   processScene(timeNowInLoop, currentScene, doReset);
@@ -327,6 +327,7 @@ void testScene(const uint32_t testColor, unsigned long speed, unsigned long time
   if (reset) {
     Serial.println("StartingTestScene");
     pixels_a->clear();  // Set all pixel colors to 'off'
+    pixels_b->clear();
     currentCounter = 0;
     currentPixel = 0;
   }
@@ -447,7 +448,17 @@ void checkForBlue() {
       Serial.println(" pressed");
     } else {
       Serial.println(" released");
+      if (buttnum == 8){
+        if (currentScene == SCENES - 1){
+          currentScene = 0;
+        }
+        else {
+          currentScene++;
+        }
+      }
     }
+    EEPROM.update(CURRENT_SCENE_EPROM, currentScene);
+    doReset = true;
   }
 }
 
@@ -691,8 +702,9 @@ void rollingCrossfadeOld(const uint32_t startColor, const uint32_t endColor, uns
 void setVarsFromEprom() {
   numPixels_a = EEPROM.read(PIX_A);
   numPixels_b = EEPROM.read(PIX_B);
+  currentScene = EEPROM.read(CURRENT_SCENE_EPROM);
 
-  uint16_t eepromIdx = 2;
+  uint16_t eepromIdx = 3;
 
   for (uint8_t scn = 0; scn < SCENES; scn++) {
     for (uint8_t spcnt = 0; spcnt < SPEED_COUNT; spcnt++) {
@@ -736,8 +748,9 @@ void setVarsFromEprom() {
 void setEpromFromVars() {
   EEPROM.update(PIX_A, numPixels_a);
   EEPROM.update(PIX_B, numPixels_b);
+  EEPROM.update(CURRENT_SCENE_EPROM, currentScene);
 
-  uint16_t eepromIdx = 2;
+  uint16_t eepromIdx = 3;
 
   for (uint8_t scn = 0; scn < SCENES; scn++) {
     for (uint8_t spcnt = 0; spcnt < SPEED_COUNT; spcnt++) {
