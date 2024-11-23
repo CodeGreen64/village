@@ -150,7 +150,7 @@ const uint8_t SCENE_TEST = 1;
 /**************************************************************************/
 
 
-bool clearEeprom = true;
+bool clearEeprom = false;
 bool blueConnected = false;
 bool doReset = true;
 
@@ -269,7 +269,8 @@ void setup(void) {
   pixels_a->begin();  // INITIALIZE NeoPixel strip object (REQUIRED)
   pixels_b->begin();
   // You'll see more of this in the loop() function below.
-  pixels_a->setBrightness(brightness);
+  pixels_a->setBrightness(150);
+  pixels_b->setBrightness(20);
 
 
   uint8_t testConvert = charToHex('9');
@@ -378,7 +379,7 @@ void checkForBlue() {
     Serial.print((char)progcmd);
     if (packetbuffer[2] == 'c') {
       //Update Color
-      // !pcsctbe program, color,  scene, channel, type, beginPixel, endPixel
+      // !pcsctbe program, Color,  scene, channel, type, beginPixel, endPixel
       // !pc10055
       waitingForColor = true;
       sceneToUpdate = charToHex(packetbuffer[3]);
@@ -399,7 +400,7 @@ void checkForBlue() {
     }
     if (packetbuffer[2] == 's') {
       //Update Speed
-      // !psnnnn program, speed, scene, type, speed to set up to 5 digits
+      // !psnnnn program, Speed, scene, type, speed to set up to 5 digits
       // !ps0035
       Serial.println("SetSpeed");
       sceneToUpdate = charToHex(packetbuffer[3]);
@@ -419,6 +420,33 @@ void checkForBlue() {
       //}
       //speedValues[sceneToUpdate][speedTypeToUpdate]
     }
+    if (packetbuffer[2] == 'x') {
+      //Update NumPix
+      // !pxnnn program, numpiX, number of pixels to 3 digits
+      // !px016
+      Serial.println("Set NumPixels");
+      channelToUpdate = charToHex(packetbuffer[3]);
+      
+      char numBuf[4];
+      Serial.print("len: ");
+      Serial.println(len, DEC);
+      uint8_t numChar = len - 3;
+      memcpy(&numBuf[0], &packetbuffer[4], numChar * sizeof(char));
+      uint16_t testVal = atoi(numBuf);
+      Serial.print("inputVal: ");
+      Serial.println(testVal, DEC);
+      if (channelToUpdate == CHANNEL_A){
+        numPixels_a = testVal;
+      }
+      else{
+        numPixels_b = testVal;
+      }
+      setEpromFromVars();
+      //for (uint8_t i = 0; i < len; i++) {
+
+      //}
+      //speedValues[sceneToUpdate][speedTypeToUpdate]
+    }    
   }
 
 
