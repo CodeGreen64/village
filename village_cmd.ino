@@ -350,6 +350,10 @@ void testScene(const uint32_t testColor, unsigned long speed, unsigned long time
     if (currentCounter == (numPixels_b + numPixels_a)) {
       currentPixel = 0;
       currentCounter = 0;
+      pixels_a->clear();
+      pixels_b->clear();
+      pixels_a->show();
+      pixels_b->show();      
     }
     if (currentCounter < numPixels_a) {
       channel = CHANNEL_A;
@@ -375,7 +379,7 @@ void testScene(const uint32_t testColor, unsigned long speed, unsigned long time
     } else {
       testSetColor(*pixels_b, currentPixel, colorToSet);
     }
-    currentPixel++;
+    currentCounter++;
   }
 }
 
