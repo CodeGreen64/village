@@ -111,12 +111,12 @@ extern uint8_t packetbuffer[];
 
 int pixelFormat = NEO_GRB + NEO_KHZ800;
 //int pixelFormat = NEO_RGBW;
-uint8_t numPixels_a = 8;
-uint8_t numPixels_b = 16;
+uint8_t numPixels_a = 9;
+uint8_t numPixels_b = 6;
 int pin_a = 6;
 int pin_b = 5;
 
-const uint8_t SCENES = 2;
+const uint8_t SCENES = 3;
 const uint8_t CHANNELS = 2;
 const uint8_t COLOR_SETUPS = 3;
 const uint8_t PIXEL_COUNT_MAX = 16;
@@ -143,7 +143,9 @@ uint32_t basicSceneMainColor = 0;
 
 const uint8_t SCENE_NOT_SET = 255;
 const uint8_t SCENE_ROLLING_FADE = 0;
-const uint8_t SCENE_TEST = 1;
+const uint8_t SCENE_BACK_FORTH = 1;
+const uint8_t SCENE_TEST = 2;
+
 
 /**************************************************************************/
 //                  VARIABLES FOR APP LOGIC
@@ -163,7 +165,7 @@ uint8_t beginPixelToUpdate = 0;
 uint8_t endPixelToUpdate = 0;
 uint32_t colorToUpdate = 0;
 
-uint8_t currentScene = SCENE_ROLLING_FADE;
+uint8_t currentScene = SCENE_BACK_FORTH;
 
 const uint8_t SPEED_COUNT = 2;
 uint16_t speedValues[SCENES][SPEED_COUNT];
@@ -269,8 +271,8 @@ void setup(void) {
   pixels_a->begin();  // INITIALIZE NeoPixel strip object (REQUIRED)
   pixels_b->begin();
   // You'll see more of this in the loop() function below.
-  pixels_a->setBrightness(150);
-  pixels_b->setBrightness(20);
+  pixels_a->setBrightness(brightness);
+  pixels_b->setBrightness(brightness);
 
 
   uint8_t testConvert = charToHex('9');
@@ -322,6 +324,9 @@ void processScene(unsigned long timeNow, uint8_t scene, bool doResetHere) {
     //rollingCrossfade(startC, endC, 10, timeNow, doResetHere);
     rollingCrossfade(timeNow, doResetHere);
   }
+  if (scene == SCENE_BACK_FORTH) {
+    backAndForth(timeNow, doResetHere);
+  }
 }
 
 void testScene(const uint32_t testColor, unsigned long speed, unsigned long timeNow, bool reset) {
@@ -330,6 +335,7 @@ void testScene(const uint32_t testColor, unsigned long speed, unsigned long time
   static uint8_t currentCounter;
   static uint8_t currentPixel;
   bool advancePixel;
+  uint8_t channel;
   if (reset) {
     Serial.println("StartingTestScene");
     pixels_a->show();
@@ -341,18 +347,34 @@ void testScene(const uint32_t testColor, unsigned long speed, unsigned long time
   }
   if (timeNow - localTime > speed) {
     localTime = timeNow;
-    if (currentPixel == numPixels_a) {
+    if (currentCounter == (numPixels_b + numPixels_a)) {
       currentPixel = 0;
-      pixels_a->clear();
-      //Serial.println("Back to start");
+      currentCounter = 0;
     }
+    if (currentCounter < numPixels_a) {
+      channel = CHANNEL_A;
+      currentPixel = currentCounter;
+    } else {
+      channel = CHANNEL_B;
+      currentPixel = currentCounter - numPixels_a;
+      //Serial.println("channel b");
+    }
+    // if (currentPixel == numPixels_a) {
+    //   currentPixel = 0;
+    //   pixels_a->clear();
+    //   //Serial.println("Back to start");
+    // }
 
     uint32_t colorToSet = allPixelColors[SCENE_TEST][CHANNEL_A][0][currentPixel];
     //Serial.print("TestColor: ");
     //Serial.println(colorToSet);
     //pixels_a->setPixelColor(currentPixel, testColor);
     //pixels_a->show();  // Send the updated pixel colors to the hardware.
-    testSetColor(*pixels_a, currentPixel, colorToSet);
+    if (channel == CHANNEL_A) {
+      testSetColor(*pixels_a, currentPixel, colorToSet);
+    } else {
+      testSetColor(*pixels_b, currentPixel, colorToSet);
+    }
     currentPixel++;
   }
 }
@@ -379,8 +401,10 @@ void checkForBlue() {
     Serial.print((char)progcmd);
     if (packetbuffer[2] == 'c') {
       //Update Color
-      // !pcsctbe program, Color,  scene, channel, type, beginPixel, endPixel
+      // !pcsctbe program, c for Color,  scene, channel, type, beginPixel, endPixel
       // !pc10055
+      // !pc01000
+      // !pc00048
       waitingForColor = true;
       sceneToUpdate = charToHex(packetbuffer[3]);
       channelToUpdate = charToHex(packetbuffer[4]);
@@ -400,7 +424,7 @@ void checkForBlue() {
     }
     if (packetbuffer[2] == 's') {
       //Update Speed
-      // !psnnnn program, Speed, scene, type, speed to set up to 5 digits
+      // !psnnnn program, s for Speed, scene, type, speed to set up to 5 digits
       // !ps0035
       Serial.println("SetSpeed");
       sceneToUpdate = charToHex(packetbuffer[3]);
@@ -422,11 +446,11 @@ void checkForBlue() {
     }
     if (packetbuffer[2] == 'x') {
       //Update NumPix
-      // !pxnnn program, numpiX, number of pixels to 3 digits
+      // !pxcnnn program, x for numpiX, channel, number of pixels to 3 digits
       // !px016
       Serial.println("Set NumPixels");
       channelToUpdate = charToHex(packetbuffer[3]);
-      
+
       char numBuf[4];
       Serial.print("len: ");
       Serial.println(len, DEC);
@@ -435,10 +459,9 @@ void checkForBlue() {
       uint16_t testVal = atoi(numBuf);
       Serial.print("inputVal: ");
       Serial.println(testVal, DEC);
-      if (channelToUpdate == CHANNEL_A){
+      if (channelToUpdate == CHANNEL_A) {
         numPixels_a = testVal;
-      }
-      else{
+      } else {
         numPixels_b = testVal;
       }
       setEpromFromVars();
@@ -446,7 +469,7 @@ void checkForBlue() {
 
       //}
       //speedValues[sceneToUpdate][speedTypeToUpdate]
-    }    
+    }
   }
 
 
@@ -483,11 +506,10 @@ void checkForBlue() {
       Serial.println(" pressed");
     } else {
       Serial.println(" released");
-      if (buttnum == 8){
-        if (currentScene == SCENES - 1){
+      if (buttnum == 8) {
+        if (currentScene == SCENES - 1) {
           currentScene = 0;
-        }
-        else {
+        } else {
           currentScene++;
         }
       }
@@ -528,9 +550,9 @@ void setColorDefaults() {
         Serial.println(col, HEX);
         Serial.println("");
         for (uint8_t px = 0; px < pxCt; px++) {
-          if (scn == SCENE_TEST && px > 7) {
-            col = 0xFF0000;
-          }
+          // if (scn == SCENE_TEST && px > 7) {
+          //   col = 0xFF0000;
+          // }
           allPixelColors[scn][ch][cs][px] = col;
           if (scn == SCENE_TEST) {  // && ch == CHANNEL_A && cs == 0) {
             Serial.print("scene: ");
@@ -553,7 +575,8 @@ void setColorDefaults() {
 
 void setSpeedDefaults() {
   speedValues[SCENE_TEST][0] = 250;
-  speedValues[SCENE_ROLLING_FADE][0] = 50;
+  speedValues[SCENE_ROLLING_FADE][0] = 10;
+  speedValues[SCENE_BACK_FORTH][0] = 1;  //seconds
 }
 
 
@@ -673,9 +696,9 @@ void rollingCrossfade(unsigned long timeNow, bool reset) {
     } else {
       advancePixel = transitionSingle(*pixels_b, currentPixel, sc, ec, reset);
     }
-    if (lastAdvance){
+    if (lastAdvance) {
       Serial.print("currentCounter: ");
-      Serial.println(currentCounter, DEC);      
+      Serial.println(currentCounter, DEC);
       Serial.print("currentPixel: ");
       Serial.println(currentPixel, DEC);
       Serial.print("startColor: ");
@@ -683,7 +706,7 @@ void rollingCrossfade(unsigned long timeNow, bool reset) {
       Serial.println("");
       Serial.print("endColor: ");
       printColor(ec);
-      Serial.println("");      
+      Serial.println("");
       Serial.print("channel: ");
       Serial.println(channel, DEC);
     }
@@ -699,6 +722,81 @@ void rollingCrossfade(unsigned long timeNow, bool reset) {
         //Serial.println(currentPixel, DEC);
       }
     }
+  }
+}
+
+
+void backAndForth(unsigned long timeNow, bool reset) {
+
+  static unsigned long localTime;
+  static bool channelAisFirst;
+
+
+  static uint8_t currentCounter;
+  static uint8_t currentPixel;
+  static bool lastAdvance;
+  bool advancePixel;
+  uint32_t sc;
+  uint32_t ec;
+  uint8_t channel;
+  unsigned long speed;
+
+  if (reset) {
+    Serial.println("backAndForth");
+    channelAisFirst = true;
+
+
+    currentCounter = 0;
+    currentPixel = 0;
+    pixels_a->clear();
+    pixels_b->clear();
+    pixels_a->show();
+    pixels_b->show();
+  }
+
+  speed = speedValues[SCENE_BACK_FORTH][0];
+  speed = speed * 1000;
+
+  if (timeNow - localTime > speed) {
+    Serial.println("BackForth change");
+    localTime = timeNow;
+    uint8_t totalPixels = numPixels_a + numPixels_b;
+    for (uint8_t currentCounter = 0; currentCounter < totalPixels; currentCounter++) {
+      uint8_t colorSetup = 0;
+      if (currentCounter < numPixels_a) {
+        channel = CHANNEL_A;
+        currentPixel = currentCounter;
+        // if (!channelAisFirst){
+        //   colorSetup = 1;
+        // }
+      } else {
+        channel = CHANNEL_B;
+        currentPixel = currentCounter - numPixels_a;
+        //Serial.println("channel b");
+        // if (channelAisFirst){
+        //   colorSetup = 1;
+        // }
+      }
+      colorSetup = (uint8_t)channelAisFirst;
+      channelAisFirst = !channelAisFirst;
+
+      uint32_t currentColor = allPixelColors[SCENE_BACK_FORTH][channel][colorSetup][currentPixel];
+
+      if (channel == CHANNEL_A) {
+        pixels_a->setPixelColor(currentPixel, currentColor);
+        Serial.println("channel A");
+      } else {
+        pixels_b->setPixelColor(currentPixel, currentColor);
+        Serial.println("channel B");
+      }
+      Serial.print("currentPixel");
+      Serial.println(currentPixel, DEC);
+      Serial.print("color: ");
+      printColor(currentColor);
+      Serial.println("");
+    }
+    pixels_a->show();
+    pixels_b->show();
   }
 }
 
