@@ -161,6 +161,7 @@ const uint8_t waterfallColorSetups[9][2] = { { 2, 0 }, { 0, 1 }, { 1, 0 }, { 0, 
 bool clearEeprom = false;
 bool blueConnected = false;
 bool doReset = true;
+bool allSceneMode = true;
 
 //Color updating
 bool waitingForColor = false;
@@ -175,6 +176,7 @@ uint8_t currentScene = SCENE_WATER_FALL;
 
 const uint8_t SPEED_COUNT = 2;
 uint16_t speedValues[SCENES][SPEED_COUNT];
+uint8_t allSceneMinutes = 5;
 
 /**************************************************************************/
 /**************************************************************************/
@@ -187,7 +189,8 @@ uint16_t speedValues[SCENES][SPEED_COUNT];
 const uint16_t PIX_A = 0;
 const uint16_t PIX_B = 1;
 const uint16_t CURRENT_SCENE_EPROM = 2;
-
+const uint16_t ALLSCENE_MINUTES_EPROM = 3;
+const uint16_t ALLSCENE_MODE_EPROM = 4;
 
 
 /**************************************************************************/
@@ -312,6 +315,9 @@ void loop(void) {
     Serial.println(currentScene, DEC);
   }
 
+  if (allSceneMode) {
+    checkAllScene(timeNowInLoop, doReset);
+  }
   processScene(timeNowInLoop, currentScene, doReset);
   doReset = false;
 
@@ -336,65 +342,6 @@ void processScene(unsigned long timeNow, uint8_t scene, bool doResetHere) {
   if (scene == SCENE_WATER_FALL) {
     waterFall(timeNow, doResetHere);
   }
-}
-
-void testScene(const uint32_t testColor, unsigned long speed, unsigned long timeNow, bool reset) {
-
-  static unsigned long localTime;
-  static uint8_t currentCounter;
-  static uint8_t currentPixel;
-  bool advancePixel;
-  uint8_t channel;
-  if (reset) {
-    Serial.println("StartingTestScene");
-    pixels_a->show();
-    pixels_a->clear();  // Set all pixel colors to 'off'
-    pixels_b->clear();
-    pixels_b->show();
-    currentCounter = 0;
-    currentPixel = 0;
-  }
-  if (timeNow - localTime > speed) {
-    localTime = timeNow;
-    if (currentCounter == (numPixels_b + numPixels_a)) {
-      currentPixel = 0;
-      currentCounter = 0;
-      pixels_a->clear();
-      pixels_b->clear();
-      pixels_a->show();
-      pixels_b->show();
-    }
-    if (currentCounter < numPixels_a) {
-      channel = CHANNEL_A;
-      currentPixel = currentCounter;
-    } else {
-      channel = CHANNEL_B;
-      currentPixel = currentCounter - numPixels_a;
-      //Serial.println("channel b");
-    }
-    // if (currentPixel == numPixels_a) {
-    //   currentPixel = 0;
-    //   pixels_a->clear();
-    //   //Serial.println("Back to start");
-    // }
-
-    uint32_t colorToSet = allPixelColors[SCENE_TEST][CHANNEL_A][0][currentPixel];
-    //Serial.print("TestColor: ");
-    //Serial.println(colorToSet);
-    //pixels_a->setPixelColor(currentPixel, testColor);
-    //pixels_a->show();  // Send the updated pixel colors to the hardware.
-    if (channel == CHANNEL_A) {
-      testSetColor(*pixels_a, currentPixel, colorToSet);
-    } else {
-      testSetColor(*pixels_b, currentPixel, colorToSet);
-    }
-    currentCounter++;
-  }
-}
-
-void testSetColor(Adafruit_NeoPixel &neo, uint8_t pix, uint32_t col) {
-  neo.setPixelColor(pix, col);
-  neo.show();
 }
 
 void checkForBlue() {
@@ -483,6 +430,23 @@ void checkForBlue() {
       //}
       //speedValues[sceneToUpdate][speedTypeToUpdate]
     }
+    if (packetbuffer[2] == 'a') {
+      //Update allScene minutes
+      // !pxann program, x for numpiX, channel, number of pixels to 2 digits
+      // !pa5
+      Serial.println("Set NumPixels");
+
+      char numBuf[3];
+      Serial.print("len: ");
+      Serial.println(len, DEC);
+      uint8_t numChar = len - 2;
+      memcpy(&numBuf[0], &packetbuffer[3], numChar * sizeof(char));
+      uint16_t testVal = atoi(numBuf);
+      Serial.print("inputVal: ");
+      Serial.println(testVal, DEC);
+      allSceneMinutes = testVal;
+      EEPROM.update(ALLSCENE_MINUTES_EPROM, allSceneMinutes);
+    }
   }
 
 
@@ -525,10 +489,22 @@ void checkForBlue() {
         } else {
           currentScene++;
         }
+        EEPROM.update(CURRENT_SCENE_EPROM, currentScene);
+        doReset = true;
       }
+      if (buttnum == 5){
+        if (!allSceneMode){
+          allSceneMode = true;
+          EEPROM.update(ALLSCENE_MODE_EPROM, allSceneMode);
+        }
+      }
+      if (buttnum == 6){
+        if (allSceneMode){
+          allSceneMode = false;
+          EEPROM.update(ALLSCENE_MODE_EPROM, allSceneMode);
+        }
+      }      
     }
-    EEPROM.update(CURRENT_SCENE_EPROM, currentScene);
-    doReset = true;
   }
 }
 
@@ -550,7 +526,6 @@ void setColorDefaults() {
       uint8_t pxCt = numPixels_a;
       if (ch == CHANNEL_B) {
         pxCt = numPixels_b;
-        
       }
       reverse = false;
       for (uint8_t cs = 0; cs < COLOR_SETUPS; cs++) {
@@ -579,7 +554,7 @@ void setColorDefaults() {
           if (scn == SCENE_ROLLING_FADE && ch == CHANNEL_A && cs == 1 && px > 3 && px < 9) {
             col = Adafruit_NeoPixel::Color(255, 255, 75);
           }
-          
+
           if (scn == SCENE_BACK_FORTH && (px % 2 == 0)) {
             if (cs == 0) {
               col = Adafruit_NeoPixel::Color(0, 0, 255);
@@ -589,19 +564,19 @@ void setColorDefaults() {
             }
           }
           allPixelColors[scn][ch][cs][px] = col;
-          if (scn == SCENE_WATER_FALL) {  // && ch == CHANNEL_A && cs == 0) {
-            Serial.print("scene: ");
-            Serial.print(scn, DEC);
-            Serial.print("; channel: ");
-            Serial.print(ch, DEC);
-            Serial.print("; color type: ");
-            Serial.print(cs, DEC);
-            Serial.print("; pixel: ");
-            Serial.print(px, DEC);
-            Serial.print("; Color: ");
-            printColor(allPixelColors[scn][ch][cs][px]);
-            Serial.println("");
-          }
+          // if (scn == SCENE_WATER_FALL) {  // && ch == CHANNEL_A && cs == 0) {
+          //   Serial.print("scene: ");
+          //   Serial.print(scn, DEC);
+          //   Serial.print("; channel: ");
+          //   Serial.print(ch, DEC);
+          //   Serial.print("; color type: ");
+          //   Serial.print(cs, DEC);
+          //   Serial.print("; pixel: ");
+          //   Serial.print(px, DEC);
+          //   Serial.print("; Color: ");
+          //   printColor(allPixelColors[scn][ch][cs][px]);
+          //   Serial.println("");
+          // }
         }
       }
     }
@@ -665,17 +640,17 @@ bool transitionSingle(Adafruit_NeoPixel &neo, uint16_t pixel, const uint32_t sta
   static uint8_t step;
   if (reset) {
     step = 0;
-    Serial.println("Reset Transition");
+    //Serial.println("Reset Transition");
   }
   uint32_t fadeVal = crossFadeValue(startColor, endColor, step);
   neo.setPixelColor(pixel, fadeVal);
   neo.show();
   if (step == 127) {
     step = 0;
-    Serial.println("Transition return true");
-    Serial.print("FadeColor: ");
-    printColor(fadeVal);
-    Serial.println("");
+    // Serial.println("Transition return true");
+    // Serial.print("FadeColor: ");
+    // printColor(fadeVal);
+    // Serial.println("");
     return true;
   }
   step++;
@@ -714,7 +689,7 @@ void rollingCrossfade(unsigned long timeNow, bool reset) {
       currentPixel = 0;
       currentCounter = 0;
       doReverse = !doReverse;
-      Serial.println("Reversing");
+      //Serial.println("Reversing");
     }
     if (currentCounter < numPixels_a) {
       channel = CHANNEL_A;
@@ -735,20 +710,20 @@ void rollingCrossfade(unsigned long timeNow, bool reset) {
     } else {
       advancePixel = transitionSingle(*pixels_b, currentPixel, sc, ec, reset);
     }
-    if (lastAdvance) {
-      Serial.print("currentCounter: ");
-      Serial.println(currentCounter, DEC);
-      Serial.print("currentPixel: ");
-      Serial.println(currentPixel, DEC);
-      Serial.print("startColor: ");
-      printColor(sc);
-      Serial.println("");
-      Serial.print("endColor: ");
-      printColor(ec);
-      Serial.println("");
-      Serial.print("channel: ");
-      Serial.println(channel, DEC);
-    }
+    // if (lastAdvance) {
+    //   Serial.print("currentCounter: ");
+    //   Serial.println(currentCounter, DEC);
+    //   Serial.print("currentPixel: ");
+    //   Serial.println(currentPixel, DEC);
+    //   Serial.print("startColor: ");
+    //   printColor(sc);
+    //   Serial.println("");
+    //   Serial.print("endColor: ");
+    //   printColor(ec);
+    //   Serial.println("");
+    //   Serial.print("channel: ");
+    //   Serial.println(channel, DEC);
+    // }
 
     lastAdvance = advancePixel;
     if (advancePixel) {
@@ -822,38 +797,38 @@ void waterFall(unsigned long timeNow, bool reset) {
         pixels_b->setPixelColor(currentPixel, fadeVal);
         //Serial.println("channel B");
       }
-      if (fadeFinished && channel == CHANNEL_B) {
-        Serial.println("******************");
-        Serial.print("currentCounter: ");
-        Serial.println(currentCounter, DEC);
-        Serial.print("colorSetupIndex: ");
-        Serial.println(colorSetupIndex, DEC);
-        Serial.print("currentSetupConter: ");
-        Serial.println(currentSetupConter, DEC);
-        Serial.print("currentPixel: ");
-        Serial.println(currentPixel, DEC);
-        Serial.print("colorSetup1: ");
-        Serial.println(colorSetup1, DEC);
-        Serial.print("colorSetup2: ");
-        Serial.println(colorSetup2, DEC);
-        Serial.print("step: ");
-        Serial.println(step, DEC);
-        Serial.print("startColor: ");
-        printColor(startColor);
-        Serial.println("");
-        Serial.print("endColor: ");
-        printColor(endColor);
-        Serial.println("");
-        Serial.print("fadeVal: ");
-        printColor(fadeVal);
-        Serial.println("");
-        if (channel == CHANNEL_A) {
-          Serial.println("channel A");
-        } else {
-          Serial.println("channel B");
-        }
-        //fadeFinished = false;
-      }
+      // if (fadeFinished && channel == CHANNEL_B) {
+      //   Serial.println("******************");
+      //   Serial.print("currentCounter: ");
+      //   Serial.println(currentCounter, DEC);
+      //   Serial.print("colorSetupIndex: ");
+      //   Serial.println(colorSetupIndex, DEC);
+      //   Serial.print("currentSetupConter: ");
+      //   Serial.println(currentSetupConter, DEC);
+      //   Serial.print("currentPixel: ");
+      //   Serial.println(currentPixel, DEC);
+      //   Serial.print("colorSetup1: ");
+      //   Serial.println(colorSetup1, DEC);
+      //   Serial.print("colorSetup2: ");
+      //   Serial.println(colorSetup2, DEC);
+      //   Serial.print("step: ");
+      //   Serial.println(step, DEC);
+      //   Serial.print("startColor: ");
+      //   printColor(startColor);
+      //   Serial.println("");
+      //   Serial.print("endColor: ");
+      //   printColor(endColor);
+      //   Serial.println("");
+      //   Serial.print("fadeVal: ");
+      //   printColor(fadeVal);
+      //   Serial.println("");
+      //   if (channel == CHANNEL_A) {
+      //     Serial.println("channel A");
+      //   } else {
+      //     Serial.println("channel B");
+      //   }
+      //   //fadeFinished = false;
+      // }
     }
     //fadeFinished = false;
     step++;
@@ -945,58 +920,32 @@ void backAndForth(unsigned long timeNow, bool reset) {
   }
 }
 
+void checkAllScene(unsigned long timeNow, bool reset) {
+  unsigned long speed;
+  static unsigned long localTime;
 
-void setVarsFromEprom() {
-  numPixels_a = EEPROM.read(PIX_A);
-  numPixels_b = EEPROM.read(PIX_B);
-  currentScene = EEPROM.read(CURRENT_SCENE_EPROM);
+  speed = (unsigned long)allSceneMinutes * 60000;
 
-  uint16_t eepromIdx = 3;
-
-  for (uint8_t scn = 0; scn < SCENES; scn++) {
-    for (uint8_t spcnt = 0; spcnt < SPEED_COUNT; spcnt++) {
-      speedValues[scn][spcnt] = EEPROM.read(eepromIdx);
-      eepromIdx++;
+  if (timeNow - localTime > speed) {
+    localTime = timeNow;
+    if (currentScene == SCENES - 1) {
+      currentScene = 0;
+    } else {
+      currentScene++;
     }
-  }
-
-  for (uint8_t scn = 0; scn < SCENES; scn++) {
-    for (uint8_t ch = 0; ch < CHANNELS; ch++) {
-      uint8_t pxCt = numPixels_a;
-      if (ch == CHANNEL_B) {
-        pxCt = numPixels_b;
-      }
-      for (uint8_t cs = 0; cs < COLOR_SETUPS; cs++) {
-        for (uint8_t px = 0; px < pxCt; px++) {
-          allPixelColors[scn][ch][cs][px] = getEepromColor(eepromIdx);
-
-          // Serial.println("*******");
-          // Serial.print("scene: ");
-          // Serial.print(scn, DEC);
-          // Serial.print(" channel: ");
-          // Serial.print(ch, DEC);
-          // Serial.print(" color type: ");
-          // Serial.print(cs, DEC);
-          // Serial.print(" pixel: ");
-          // Serial.print(px, DEC);
-
-
-          // Serial.print(" EEidx: ");
-          // Serial.print(eepromIdx);
-          // Serial.print("Color: ");
-          // printColor(allPixelColors[scn][ch][cs][px]);
-        }
-      }
-    }
+    doReset = true;
   }
 }
+
 
 void setEpromFromVars() {
   EEPROM.update(PIX_A, numPixels_a);
   EEPROM.update(PIX_B, numPixels_b);
   EEPROM.update(CURRENT_SCENE_EPROM, currentScene);
+  EEPROM.update(ALLSCENE_MINUTES_EPROM, allSceneMinutes);
+  EEPROM.update(ALLSCENE_MODE_EPROM, allSceneMode);
 
-  uint16_t eepromIdx = 3;
+  uint16_t eepromIdx = 5;
 
   for (uint8_t scn = 0; scn < SCENES; scn++) {
     for (uint8_t spcnt = 0; spcnt < SPEED_COUNT; spcnt++) {
@@ -1038,6 +987,117 @@ void setEpromFromVars() {
     }
   }
 }
+
+void setVarsFromEprom() {
+  numPixels_a = EEPROM.read(PIX_A);
+  numPixels_b = EEPROM.read(PIX_B);
+  currentScene = EEPROM.read(CURRENT_SCENE_EPROM);
+  allSceneMinutes = EEPROM.read(ALLSCENE_MINUTES_EPROM);
+  allSceneMode = EEPROM.read(ALLSCENE_MODE_EPROM);
+
+  uint16_t eepromIdx = 5;
+
+  for (uint8_t scn = 0; scn < SCENES; scn++) {
+    for (uint8_t spcnt = 0; spcnt < SPEED_COUNT; spcnt++) {
+      speedValues[scn][spcnt] = EEPROM.read(eepromIdx);
+      eepromIdx++;
+    }
+  }
+
+  for (uint8_t scn = 0; scn < SCENES; scn++) {
+    for (uint8_t ch = 0; ch < CHANNELS; ch++) {
+      uint8_t pxCt = numPixels_a;
+      if (ch == CHANNEL_B) {
+        pxCt = numPixels_b;
+      }
+      for (uint8_t cs = 0; cs < COLOR_SETUPS; cs++) {
+        for (uint8_t px = 0; px < pxCt; px++) {
+          allPixelColors[scn][ch][cs][px] = getEepromColor(eepromIdx);
+
+          // Serial.println("*******");
+          // Serial.print("scene: ");
+          // Serial.print(scn, DEC);
+          // Serial.print(" channel: ");
+          // Serial.print(ch, DEC);
+          // Serial.print(" color type: ");
+          // Serial.print(cs, DEC);
+          // Serial.print(" pixel: ");
+          // Serial.print(px, DEC);
+
+
+          // Serial.print(" EEidx: ");
+          // Serial.print(eepromIdx);
+          // Serial.print("Color: ");
+          // printColor(allPixelColors[scn][ch][cs][px]);
+        }
+      }
+    }
+  }
+}
+
+
+
+
+void testScene(const uint32_t testColor, unsigned long speed, unsigned long timeNow, bool reset) {
+
+  static unsigned long localTime;
+  static uint8_t currentCounter;
+  static uint8_t currentPixel;
+  bool advancePixel;
+  uint8_t channel;
+  if (reset) {
+    Serial.println("StartingTestScene");
+    pixels_a->show();
+    pixels_a->clear();  // Set all pixel colors to 'off'
+    pixels_b->clear();
+    pixels_b->show();
+    currentCounter = 0;
+    currentPixel = 0;
+  }
+  if (timeNow - localTime > speed) {
+    localTime = timeNow;
+    if (currentCounter == (numPixels_b + numPixels_a)) {
+      currentPixel = 0;
+      currentCounter = 0;
+      pixels_a->clear();
+      pixels_b->clear();
+      pixels_a->show();
+      pixels_b->show();
+    }
+    if (currentCounter < numPixels_a) {
+      channel = CHANNEL_A;
+      currentPixel = currentCounter;
+    } else {
+      channel = CHANNEL_B;
+      currentPixel = currentCounter - numPixels_a;
+      //Serial.println("channel b");
+    }
+    // if (currentPixel == numPixels_a) {
+    //   currentPixel = 0;
+    //   pixels_a->clear();
+    //   //Serial.println("Back to start");
+    // }
+
+    uint32_t colorToSet = allPixelColors[SCENE_TEST][CHANNEL_A][0][currentPixel];
+    //Serial.print("TestColor: ");
+    //Serial.println(colorToSet);
+    //pixels_a->setPixelColor(currentPixel, testColor);
+    //pixels_a->show();  // Send the updated pixel colors to the hardware.
+    if (channel == CHANNEL_A) {
+      testSetColor(*pixels_a, currentPixel, colorToSet);
+    } else {
+      testSetColor(*pixels_b, currentPixel, colorToSet);
+    }
+    currentCounter++;
+  }
+}
+
+void testSetColor(Adafruit_NeoPixel &neo, uint8_t pix, uint32_t col) {
+  neo.setPixelColor(pix, col);
+  neo.show();
+}
+
+
 
 void printColor(uint32_t colorVal) {
   byte red = 0;
