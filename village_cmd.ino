@@ -109,8 +109,8 @@ extern uint8_t packetbuffer[];
 //                  VARIABLES FOR NEO-PIXEL
 /**************************************************************************/
 
-int pixelFormat = NEO_GRB + NEO_KHZ800;
-//int pixelFormat = NEO_RGBW;
+//int pixelFormat = NEO_GRB + NEO_KHZ800;
+int pixelFormat = NEO_RGBW;
 uint8_t numPixels_a = 9;
 uint8_t numPixels_b = 6;
 int pin_a = 6;
@@ -130,7 +130,7 @@ uint32_t allPixelColors[SCENES][CHANNELS][COLOR_SETUPS][PIXEL_COUNT_MAX];
 Adafruit_NeoPixel *pixels_a;
 Adafruit_NeoPixel *pixels_b;
 
-uint8_t brightness = 30;
+uint8_t brightness = 150;
 
 uint8_t basicSceneMainColorGreen = 0;
 uint8_t basicSceneMainColorRed = 0;
@@ -144,7 +144,13 @@ uint32_t basicSceneMainColor = 0;
 const uint8_t SCENE_NOT_SET = 255;
 const uint8_t SCENE_ROLLING_FADE = 0;
 const uint8_t SCENE_BACK_FORTH = 1;
-const uint8_t SCENE_TEST = 2;
+const uint8_t SCENE_WATER_FALL = 2;
+const uint8_t SCENE_TEST = 3;
+
+//const uint8_t waterfallColorSetups[9][2] = { { 1, 0 }, { 0, 1 }, { 1, 0 }, { 0, 2 }, { 1, 2 }, { 0, 2 }, { 2, 1 }, { 2, 0 }, { 2, 1 } };
+
+const uint8_t waterfallColorSetups[9][2] = { { 2, 0 }, { 0, 1 }, { 1, 0 }, { 0, 1 }, { 1, 2 }, { 0, 2 }, { 1, 2 }, { 2, 0 }, { 2, 1 } };
+
 
 
 /**************************************************************************/
@@ -165,7 +171,7 @@ uint8_t beginPixelToUpdate = 0;
 uint8_t endPixelToUpdate = 0;
 uint32_t colorToUpdate = 0;
 
-uint8_t currentScene = SCENE_BACK_FORTH;
+uint8_t currentScene = SCENE_WATER_FALL;
 
 const uint8_t SPEED_COUNT = 2;
 uint16_t speedValues[SCENES][SPEED_COUNT];
@@ -327,6 +333,9 @@ void processScene(unsigned long timeNow, uint8_t scene, bool doResetHere) {
   if (scene == SCENE_BACK_FORTH) {
     backAndForth(timeNow, doResetHere);
   }
+  if (scene == SCENE_WATER_FALL) {
+    waterFall(timeNow, doResetHere);
+  }
 }
 
 void testScene(const uint32_t testColor, unsigned long speed, unsigned long timeNow, bool reset) {
@@ -353,7 +362,7 @@ void testScene(const uint32_t testColor, unsigned long speed, unsigned long time
       pixels_a->clear();
       pixels_b->clear();
       pixels_a->show();
-      pixels_b->show();      
+      pixels_b->show();
     }
     if (currentCounter < numPixels_a) {
       channel = CHANNEL_A;
@@ -531,6 +540,8 @@ void clearMem() {
 
 
 void setColorDefaults() {
+
+  bool reverse = false;
   Serial.println("");
   Serial.println("SET_COLOR_DEFAULTS *******");
 
@@ -539,26 +550,46 @@ void setColorDefaults() {
       uint8_t pxCt = numPixels_a;
       if (ch == CHANNEL_B) {
         pxCt = numPixels_b;
+        
       }
+      reverse = false;
       for (uint8_t cs = 0; cs < COLOR_SETUPS; cs++) {
-        uint32_t col = Adafruit_NeoPixel::Color(255, 0, 0);
-        if (scn == SCENE_TEST) {
-          col = Adafruit_NeoPixel::Color(0, 0, 255);
-        }
-        if (cs == 1) {
-          col = Adafruit_NeoPixel::Color(0, 255, 0);
-        }
-        Serial.print("SetColor: ");
-        printColor(col);
-        Serial.print(" hexCol: ");
-        Serial.println(col, HEX);
-        Serial.println("");
+
+        reverse = !reverse;
+        // Serial.print("SetColor: ");
+        // printColor(col);
+        // Serial.print(" hexCol: ");
+        // Serial.println(col, HEX);
+        // Serial.println("");
         for (uint8_t px = 0; px < pxCt; px++) {
-          // if (scn == SCENE_TEST && px > 7) {
-          //   col = 0xFF0000;
-          // }
+          reverse = !reverse;
+          uint32_t col = Adafruit_NeoPixel::Color(255, 0, 0);
+          if (scn == SCENE_TEST) {
+            col = Adafruit_NeoPixel::Color(0, 0, 255);
+          }
+          if (cs == 1) {
+            col = Adafruit_NeoPixel::Color(0, 255, 0);
+          }
+          if (cs == 2) {
+            col = Adafruit_NeoPixel::Color(0, 0, 255);
+          }
+          if (scn == SCENE_ROLLING_FADE && ch == CHANNEL_A && cs == 0 && px > 3 && px < 9) {
+            col = Adafruit_NeoPixel::Color(0, 0, 255);
+          }
+          if (scn == SCENE_ROLLING_FADE && ch == CHANNEL_A && cs == 1 && px > 3 && px < 9) {
+            col = Adafruit_NeoPixel::Color(255, 255, 75);
+          }
+          
+          if (scn == SCENE_BACK_FORTH && (px % 2 == 0)) {
+            if (cs == 0) {
+              col = Adafruit_NeoPixel::Color(0, 0, 255);
+            }
+            if (cs == 1) {
+              col = Adafruit_NeoPixel::Color(255, 255, 75);
+            }
+          }
           allPixelColors[scn][ch][cs][px] = col;
-          if (scn == SCENE_TEST) {  // && ch == CHANNEL_A && cs == 0) {
+          if (scn == SCENE_WATER_FALL) {  // && ch == CHANNEL_A && cs == 0) {
             Serial.print("scene: ");
             Serial.print(scn, DEC);
             Serial.print("; channel: ");
@@ -578,9 +609,10 @@ void setColorDefaults() {
 }
 
 void setSpeedDefaults() {
-  speedValues[SCENE_TEST][0] = 250;
-  speedValues[SCENE_ROLLING_FADE][0] = 10;
+  //speedValues[SCENE_TEST][0] = 250;
+  speedValues[SCENE_ROLLING_FADE][0] = 20;
   speedValues[SCENE_BACK_FORTH][0] = 1;  //seconds
+  speedValues[SCENE_WATER_FALL][0] = 25;
 }
 
 
@@ -588,11 +620,11 @@ uint32_t crossFadeValue(const uint32_t startColor, const uint32_t endColor, int 
   uint32_t sc = startColor;
   uint32_t ec = endColor;
   int s = step;
-  if (step > 127) {
-    sc = endColor;
-    ec = startColor;
-    s = step - 128;
-  }
+  // if (step > 127) {
+  //   sc = endColor;
+  //   ec = startColor;
+  //   s = step - 128;
+  // }
 
   byte startRed = 0;
   byte startGreen = 0;
@@ -638,9 +670,12 @@ bool transitionSingle(Adafruit_NeoPixel &neo, uint16_t pixel, const uint32_t sta
   uint32_t fadeVal = crossFadeValue(startColor, endColor, step);
   neo.setPixelColor(pixel, fadeVal);
   neo.show();
-  if (step == 128) {
+  if (step == 127) {
     step = 0;
     Serial.println("Transition return true");
+    Serial.print("FadeColor: ");
+    printColor(fadeVal);
+    Serial.println("");
     return true;
   }
   step++;
@@ -730,6 +765,112 @@ void rollingCrossfade(unsigned long timeNow, bool reset) {
 }
 
 
+void waterFall(unsigned long timeNow, bool reset) {
+
+  static unsigned long localTime;
+  static uint8_t currentSetupConter;
+  static uint8_t step;
+  uint8_t currentPixel;
+  uint8_t channel;
+  unsigned long speed;
+  uint8_t colorSetup1;
+  uint8_t colorSetup2;
+  uint8_t colorSetupIndex;
+
+  static bool fadeFinished;
+
+  if (reset) {
+    Serial.println("WaterFall");
+    currentSetupConter = 0;
+    currentPixel = 0;
+    step = 0;
+    pixels_a->clear();
+    pixels_b->clear();
+    fadeFinished = true;
+  }
+
+  speed = speedValues[SCENE_WATER_FALL][0];
+
+  if (timeNow - localTime > speed) {
+    localTime = timeNow;
+    uint8_t totalPixels = numPixels_a + numPixels_b;
+    for (uint8_t currentCounter = 0; currentCounter < totalPixels; currentCounter++) {
+      if (currentCounter < numPixels_a) {
+        channel = CHANNEL_A;
+        currentPixel = currentCounter;
+      } else {
+        channel = CHANNEL_B;
+        currentPixel = currentCounter - numPixels_a;
+      }
+      if (currentCounter < 4) {
+        colorSetupIndex = 0;
+      } else if (currentCounter > 8) {
+        colorSetupIndex = 2;
+      } else {
+        colorSetupIndex = 1;
+      }
+      colorSetupIndex = colorSetupIndex + (3 * currentSetupConter);
+      colorSetup1 = waterfallColorSetups[colorSetupIndex][0];
+      colorSetup2 = waterfallColorSetups[colorSetupIndex][1];
+      uint32_t startColor = allPixelColors[SCENE_WATER_FALL][channel][colorSetup1][currentPixel];
+      uint32_t endColor = allPixelColors[SCENE_WATER_FALL][channel][colorSetup2][currentPixel];
+      uint32_t fadeVal = crossFadeValue(startColor, endColor, step);
+      if (channel == CHANNEL_A) {
+        pixels_a->setPixelColor(currentPixel, fadeVal);
+        //Serial.println("channel A");
+      } else {
+        pixels_b->setPixelColor(currentPixel, fadeVal);
+        //Serial.println("channel B");
+      }
+      if (fadeFinished && channel == CHANNEL_B) {
+        Serial.println("******************");
+        Serial.print("currentCounter: ");
+        Serial.println(currentCounter, DEC);
+        Serial.print("colorSetupIndex: ");
+        Serial.println(colorSetupIndex, DEC);
+        Serial.print("currentSetupConter: ");
+        Serial.println(currentSetupConter, DEC);
+        Serial.print("currentPixel: ");
+        Serial.println(currentPixel, DEC);
+        Serial.print("colorSetup1: ");
+        Serial.println(colorSetup1, DEC);
+        Serial.print("colorSetup2: ");
+        Serial.println(colorSetup2, DEC);
+        Serial.print("step: ");
+        Serial.println(step, DEC);
+        Serial.print("startColor: ");
+        printColor(startColor);
+        Serial.println("");
+        Serial.print("endColor: ");
+        printColor(endColor);
+        Serial.println("");
+        Serial.print("fadeVal: ");
+        printColor(fadeVal);
+        Serial.println("");
+        if (channel == CHANNEL_A) {
+          Serial.println("channel A");
+        } else {
+          Serial.println("channel B");
+        }
+        //fadeFinished = false;
+      }
+    }
+    //fadeFinished = false;
+    step++;
+    if (step == 127) {
+      step = 0;
+      currentSetupConter++;
+      if (currentSetupConter > 2) {
+        currentSetupConter = 0;
+        fadeFinished = false;
+      }
+      //fadeFinished = true;
+    }
+    pixels_a->show();
+    pixels_b->show();
+  }
+}
+
 void backAndForth(unsigned long timeNow, bool reset) {
 
   static unsigned long localTime;
@@ -762,7 +903,7 @@ void backAndForth(unsigned long timeNow, bool reset) {
   speed = speed * 1000;
 
   if (timeNow - localTime > speed) {
-    Serial.println("BackForth change");
+    //Serial.println("BackForth change");
     localTime = timeNow;
     uint8_t totalPixels = numPixels_a + numPixels_b;
     for (uint8_t currentCounter = 0; currentCounter < totalPixels; currentCounter++) {
@@ -788,16 +929,16 @@ void backAndForth(unsigned long timeNow, bool reset) {
 
       if (channel == CHANNEL_A) {
         pixels_a->setPixelColor(currentPixel, currentColor);
-        Serial.println("channel A");
+        //Serial.println("channel A");
       } else {
         pixels_b->setPixelColor(currentPixel, currentColor);
-        Serial.println("channel B");
+        //Serial.println("channel B");
       }
-      Serial.print("currentPixel");
-      Serial.println(currentPixel, DEC);
-      Serial.print("color: ");
-      printColor(currentColor);
-      Serial.println("");
+      // Serial.print("currentPixel");
+      // Serial.println(currentPixel, DEC);
+      // Serial.print("color: ");
+      // printColor(currentColor);
+      // Serial.println("");
     }
     pixels_a->show();
     pixels_b->show();
@@ -844,7 +985,6 @@ void setVarsFromEprom() {
           // Serial.print(eepromIdx);
           // Serial.print("Color: ");
           // printColor(allPixelColors[scn][ch][cs][px]);
-          //eepromIdx++;
         }
       }
     }
@@ -877,24 +1017,22 @@ void setEpromFromVars() {
       for (uint8_t cs = 0; cs < COLOR_SETUPS; cs++) {
         for (uint8_t px = 0; px < pxCt; px++) {
           setEepromColor(eepromIdx, allPixelColors[scn][ch][cs][px]);
-          Serial.print("eePromIdx");
-          Serial.println(eepromIdx, DEC);
-          if (scn == SCENE_TEST && ch == CHANNEL_A && cs == 0) {
+          // Serial.print("eePromIdx");
+          // Serial.println(eepromIdx, DEC);
+          // if (scn == SCENE_WATER_FALL) {
 
-            // Serial.print("scene: ");
-            // Serial.print(scn, DEC);
-            // Serial.print("; channel: ");
-            // Serial.print(ch, DEC);
-            // Serial.print("; color type: ");
-            // Serial.print(cs, DEC);
-            // Serial.print("; pixel: ");
-            // Serial.print(px, DEC);
-            // Serial.print("; Color: ");
-            // printColor(allPixelColors[scn][ch][cs][px]);
-            // Serial.println("");
-          }
-          //EEPROM.update(eepromIdx, allPixelColors[scn][ch][cs][px]);
-          //eepromIdx++;
+          //   Serial.print("scene: ");
+          //   Serial.print(scn, DEC);
+          //   Serial.print("; channel: ");
+          //   Serial.print(ch, DEC);
+          //   Serial.print("; color type: ");
+          //   Serial.print(cs, DEC);
+          //   Serial.print("; pixel: ");
+          //   Serial.print(px, DEC);
+          //   Serial.print("; Color: ");
+          //   printColor(allPixelColors[scn][ch][cs][px]);
+          //   Serial.println("");
+          // }
         }
       }
     }
