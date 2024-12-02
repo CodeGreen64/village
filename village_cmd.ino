@@ -432,7 +432,7 @@ void checkForBlue() {
     }
     if (packetbuffer[2] == 'a') {
       //Update allScene minutes
-      // !pxann program, x for numpiX, channel, number of pixels to 2 digits
+      // !pxann program, a for AllScenes, minutes for all scenes rotation to 2 digits
       // !pa5
       Serial.println("Set NumPixels");
 
@@ -492,18 +492,25 @@ void checkForBlue() {
         EEPROM.update(CURRENT_SCENE_EPROM, currentScene);
         doReset = true;
       }
-      if (buttnum == 5){
-        if (!allSceneMode){
+      if (buttnum == 5) {
+        if (!allSceneMode) {
           allSceneMode = true;
           EEPROM.update(ALLSCENE_MODE_EPROM, allSceneMode);
         }
       }
-      if (buttnum == 6){
-        if (allSceneMode){
+      if (buttnum == 6) {
+        if (allSceneMode) {
           allSceneMode = false;
           EEPROM.update(ALLSCENE_MODE_EPROM, allSceneMode);
         }
-      }      
+      }
+      if (buttnum == 7) {
+        clearMem();
+        setColorDefaults();
+        setSpeedDefaults();
+        setEpromFromVars();
+        doReset = true;
+      }
     }
   }
 }
