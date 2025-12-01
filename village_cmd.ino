@@ -111,7 +111,7 @@ extern uint8_t packetbuffer[];
 
 //int pixelFormat = NEO_GRB + NEO_KHZ800;
 int pixelFormat = NEO_RGBW;
-uint8_t numPixels_a = 9;
+uint8_t numPixels_a = 10;
 uint8_t numPixels_b = 6;
 int pin_a = 6;
 int pin_b = 5;
@@ -172,7 +172,7 @@ uint8_t beginPixelToUpdate = 0;
 uint8_t endPixelToUpdate = 0;
 uint32_t colorToUpdate = 0;
 
-uint8_t currentScene = SCENE_WATER_FALL;
+uint8_t currentScene = SCENE_ROLLING_FADE;
 
 const uint8_t SPEED_COUNT = 2;
 uint16_t speedValues[SCENES][SPEED_COUNT];
@@ -270,6 +270,10 @@ void setup(void) {
 
   setVarsFromEprom();
 
+  
+  Serial.print("numPixA: ");
+  Serial.println(numPixels_a, DEC);
+
   // Then create a new NeoPixel object dynamically with these values:
   pixels_a = new Adafruit_NeoPixel(numPixels_a, pin_a, pixelFormat);
   pixels_b = new Adafruit_NeoPixel(numPixels_b, pin_b, pixelFormat);
@@ -287,6 +291,7 @@ void setup(void) {
   uint8_t testConvert = charToHex('9');
   Serial.print("TestConvert: ");
   Serial.println(testConvert);
+
 }
 
 /**************************************************************************/
@@ -328,7 +333,8 @@ void processScene(unsigned long timeNow, uint8_t scene, bool doResetHere) {
   //Serial.println("Process scene");
   if (scene == SCENE_TEST) {
     uint32_t testC = Adafruit_NeoPixel::Color(255, 0, 0);
-    testScene(basicSceneMainColor, speedValues[SCENE_TEST][0], timeNow, doResetHere);
+    //testScene(testC, speedValues[SCENE_TEST][0], timeNow, doResetHere);
+    testScene(testC, 50, timeNow, doResetHere);
   }
   if (scene == SCENE_ROLLING_FADE) {
     uint32_t startC = Adafruit_NeoPixel::Color(255, 0, 0);
@@ -591,7 +597,7 @@ void setColorDefaults() {
 }
 
 void setSpeedDefaults() {
-  //speedValues[SCENE_TEST][0] = 250;
+  speedValues[SCENE_TEST][0] = 50;
   speedValues[SCENE_ROLLING_FADE][0] = 20;
   speedValues[SCENE_BACK_FORTH][0] = 1;  //seconds
   speedValues[SCENE_WATER_FALL][0] = 25;
@@ -857,22 +863,21 @@ void backAndForth(unsigned long timeNow, bool reset) {
 
   static unsigned long localTime;
   static bool channelAisFirst;
+  //static bool channelBisFirst;
 
-
-  static uint8_t currentCounter;
-  static uint8_t currentPixel;
-  static bool lastAdvance;
-  bool advancePixel;
-  uint32_t sc;
-  uint32_t ec;
+  bool colorSetupBool;
+  uint8_t currentCounter;
+  uint8_t currentPixel;
+  //static bool lastAdvance;
+  //bool advancePixel;
+  //uint32_t sc;
+  //uint32_t ec;
   uint8_t channel;
   unsigned long speed;
 
   if (reset) {
     Serial.println("backAndForth");
     channelAisFirst = true;
-
-
     currentCounter = 0;
     currentPixel = 0;
     pixels_a->clear();
@@ -886,6 +891,8 @@ void backAndForth(unsigned long timeNow, bool reset) {
 
   if (timeNow - localTime > speed) {
     //Serial.println("BackForth change");
+    channelAisFirst = !channelAisFirst;
+    colorSetupBool = channelAisFirst;
     localTime = timeNow;
     uint8_t totalPixels = numPixels_a + numPixels_b;
     for (uint8_t currentCounter = 0; currentCounter < totalPixels; currentCounter++) {
@@ -893,19 +900,24 @@ void backAndForth(unsigned long timeNow, bool reset) {
       if (currentCounter < numPixels_a) {
         channel = CHANNEL_A;
         currentPixel = currentCounter;
+        
+        
+        
         // if (!channelAisFirst){
         //   colorSetup = 1;
         // }
       } else {
         channel = CHANNEL_B;
         currentPixel = currentCounter - numPixels_a;
+
         //Serial.println("channel b");
         // if (channelAisFirst){
         //   colorSetup = 1;
         // }
       }
-      colorSetup = (uint8_t)channelAisFirst;
-      channelAisFirst = !channelAisFirst;
+      
+      colorSetup = (uint8_t)colorSetupBool;
+      colorSetupBool = !colorSetupBool;
 
       uint32_t currentColor = allPixelColors[SCENE_BACK_FORTH][channel][colorSetup][currentPixel];
 
@@ -916,11 +928,13 @@ void backAndForth(unsigned long timeNow, bool reset) {
         pixels_b->setPixelColor(currentPixel, currentColor);
         //Serial.println("channel B");
       }
-      // Serial.print("currentPixel");
-      // Serial.println(currentPixel, DEC);
-      // Serial.print("color: ");
-      // printColor(currentColor);
-      // Serial.println("");
+       //Serial.print("currentPixel");
+       //Serial.println(currentPixel, DEC);
+       //Serial.print("colorSetup");
+       //Serial.println(colorSetup, DEC);
+       //Serial.print("color: ");
+       //printColor(currentColor);
+       //Serial.println("");
     }
     pixels_a->show();
     pixels_b->show();
@@ -1054,9 +1068,9 @@ void testScene(const uint32_t testColor, unsigned long speed, unsigned long time
   uint8_t channel;
   if (reset) {
     Serial.println("StartingTestScene");
-    pixels_a->show();
     pixels_a->clear();  // Set all pixel colors to 'off'
-    pixels_b->clear();
+    pixels_b->clear();    
+    pixels_a->show();
     pixels_b->show();
     currentCounter = 0;
     currentPixel = 0;
@@ -1085,9 +1099,12 @@ void testScene(const uint32_t testColor, unsigned long speed, unsigned long time
     //   //Serial.println("Back to start");
     // }
 
-    uint32_t colorToSet = allPixelColors[SCENE_TEST][CHANNEL_A][0][currentPixel];
-    //Serial.print("TestColor: ");
-    //Serial.println(colorToSet);
+    //uint32_t colorToSet = allPixelColors[SCENE_TEST][CHANNEL_A][0][currentPixel];
+
+    Serial.print("TestColor: ");
+    uint32_t colorToSet = testColor;
+    Serial.println(colorToSet);
+
     //pixels_a->setPixelColor(currentPixel, testColor);
     //pixels_a->show();  // Send the updated pixel colors to the hardware.
     if (channel == CHANNEL_A) {
