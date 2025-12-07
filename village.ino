@@ -790,9 +790,9 @@ void waterFall(unsigned long timeNow, bool reset) {
         channel = CHANNEL_B;
         currentPixel = currentCounter - numPixels_a;
       }
-      if (currentCounter < 4) {
+      if (currentCounter < 5) {
         colorSetupIndex = 0;
-      } else if (currentCounter > 8) {
+      } else if (currentCounter > 9) {
         colorSetupIndex = 2;
       } else {
         colorSetupIndex = 1;
