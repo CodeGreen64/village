@@ -567,6 +567,49 @@ void setColorDefaults() {
           if (scn == SCENE_ROLLING_FADE && ch == CHANNEL_A && cs == 1 && px > 3 && px < 9) {
             col = Adafruit_NeoPixel::Color(255, 255, 75);
           }
+          if (scn == SCENE_ROLLING_FADE)
+          {
+            if (cs == 0) {
+              //GRB
+              if (ch == CHANNEL_A && cs == 0 && px < 5) {
+                col = Adafruit_NeoPixel::Color(0, 255, 0);
+              }
+              else if (ch == CHANNEL_A) {
+                col = Adafruit_NeoPixel::Color(255, 0, 0);
+              }
+              else {
+                col = Adafruit_NeoPixel::Color(0, 0, 255);
+              }
+            }
+            else if (cs == 1){
+              //WGR
+              if (ch == CHANNEL_A && cs == 1 && px < 5) {
+                col = Adafruit_NeoPixel::Color(255, 255, 75);
+              }
+              else if (ch == CHANNEL_A) {
+                col = Adafruit_NeoPixel::Color(0, 255, 0);
+              }
+              else {
+                col = Adafruit_NeoPixel::Color(255, 0, 0);
+              }              
+            }
+            else {
+              //BWG
+              if (ch == CHANNEL_A && cs == 2 && px < 5) {
+                col = Adafruit_NeoPixel::Color(0, 0, 255);
+              }
+              else if (ch == CHANNEL_A) {
+                col = Adafruit_NeoPixel::Color(255, 255, 75);
+              }
+              else {
+                col = Adafruit_NeoPixel::Color(0, 255, 0);
+              }              
+            }            
+          }
+          
+          //WGR
+          //BWG
+          //RBW
 
           if (scn == SCENE_BACK_FORTH && (px % 2 == 0)) {
             if (cs == 0) {
@@ -590,6 +633,18 @@ void setColorDefaults() {
           //   printColor(allPixelColors[scn][ch][cs][px]);
           //   Serial.println("");
           // }
+          // if (scn == SCENE_ROLLING_FADE) {  // && ch == CHANNEL_A && cs == 0) {
+
+          //   Serial.print("; channel: ");
+          //   Serial.print(ch, DEC);
+          //   Serial.print("; color setup: ");
+          //   Serial.print(cs, DEC);
+          //   Serial.print("; pixel: ");
+          //   Serial.print(px, DEC);
+          //   Serial.print("; Color: ");
+          //   printColor(allPixelColors[scn][ch][cs][px]);
+          //   Serial.println("");
+          // }          
         }
       }
     }
@@ -671,8 +726,89 @@ bool transitionSingle(Adafruit_NeoPixel &neo, uint16_t pixel, const uint32_t sta
 }
 
 
-
 void rollingCrossfade(unsigned long timeNow, bool reset) {
+
+  static unsigned long localTime;
+  static uint8_t currentCounter;
+  static uint8_t currentPixel;
+  static bool lastAdvance;
+  static uint32_t currentColorSetup;
+  static uint32_t nextColorSetup;
+  bool advancePixel;
+  uint8_t channel;
+  unsigned long speed;
+
+  if (reset) {
+    Serial.println("rollingCrossfade");
+    currentCounter = 0;
+    currentPixel = 0;
+    pixels_a->clear();
+    pixels_b->clear();
+    currentColorSetup = 0;
+    nextColorSetup = 1;
+  }
+
+  speed = speedValues[SCENE_ROLLING_FADE][0];
+
+  if (timeNow - localTime > speed) {
+    localTime = timeNow;
+    if (currentCounter == (numPixels_b + numPixels_a)) {
+      currentPixel = 0;
+      currentCounter = 0;
+      currentColorSetup++;
+      nextColorSetup++;
+      if (currentColorSetup == COLOR_SETUPS){
+        currentColorSetup = 0;
+      }
+      if (nextColorSetup == COLOR_SETUPS){
+        nextColorSetup = 0;
+      }      
+    }
+    if (currentCounter < numPixels_a) {
+      channel = CHANNEL_A;
+    } else {
+      channel = CHANNEL_B;
+      //Serial.println("channel b");
+    }
+    uint32_t startColor = allPixelColors[SCENE_ROLLING_FADE][channel][currentColorSetup][currentPixel];
+    uint32_t endColor = allPixelColors[SCENE_ROLLING_FADE][channel][nextColorSetup][currentPixel];
+
+    if (channel == CHANNEL_A) {
+      advancePixel = transitionSingle(*pixels_a, currentPixel, startColor, endColor, reset);
+    } else {
+      advancePixel = transitionSingle(*pixels_b, currentPixel, startColor, endColor, reset);
+    }
+    // if (lastAdvance) {
+    //   Serial.print("currentCounter: ");
+    //   Serial.println(currentCounter, DEC);
+    //   Serial.print("currentPixel: ");
+    //   Serial.println(currentPixel, DEC);
+    //   Serial.print("startColor: ");
+    //   printColor(startColor);
+    //   Serial.println("");
+    //   Serial.print("endColor: ");
+    //   printColor(endColor);
+    //   Serial.println("");
+    //   Serial.print("channel: ");
+    //   Serial.println(channel, DEC);
+    // }
+
+    lastAdvance = advancePixel;
+    if (advancePixel) {
+      currentCounter++;
+      if (currentCounter < numPixels_a) {
+        currentPixel = currentCounter;
+      } else {
+        currentPixel = currentCounter - numPixels_a;
+        //Serial.print("b pixel: ");
+        //Serial.println(currentPixel, DEC);
+      }
+    }
+  }
+}
+
+
+void rollingCrossfadeOLD(unsigned long timeNow, bool reset) {
 
   static unsigned long localTime;
   static uint8_t currentCounter;
@@ -790,9 +926,9 @@ void waterFall(unsigned long timeNow, bool reset) {
         channel = CHANNEL_B;
         currentPixel = currentCounter - numPixels_a;
       }
-      if (currentCounter < 4) {
+      if (currentCounter < 5) {
         colorSetupIndex = 0;
-      } else if (currentCounter > 8) {
+      } else if (currentCounter > 9) {
         colorSetupIndex = 2;
       } else {
         colorSetupIndex = 1;
